@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+  <head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+	<style>
+	  #result-frame {
+		  width: 90vw;
+		  height: 90vh;
+	  }
+	  header {
+		  text-align: center;
+	  }
+	  main {
+		  display: flex;
+		  flex-flow: row wrap;
+		  justify-content: center;
+		  align-items: center;
+	  }
+	  #category-input {
+		  font-size: x-large;
+		  text-align: center;
+		  width: 70vw;
+		  line-height: 2em;
+		  height: auto;
+	  }
+	  #search-submit {
+		  font-size: x-large;
+		  line-height: 2em;
+	  }
+	  form {
+		  text-align: center;
+		  margin: 2em;
+		  max-width: 100%;
+	  }
+	  footer {
+		  font-size: x-small;
+		  text-align: center;
+		  margin: 2em;
+	  }
+	  #levels {
+		  font-size: small;
+	  }
+	</style>
+  </head>
+  <body>
+	<header>
+	  <h1>Wikidice 🎲</h1>
+	  <p>Pick a Wikipedia category, read a random article from that category.</p>
+	</header>
+	<form method="get" action="/">
+	  <lh-autocomplete api="/category-autocomplete?q=">
+		<input id="category-input" type="text" name="category" placeholder="Physics" {{if (ne .Category "")}} value="{{.Category}}" {{end}}>
+	  </lh-autocomplete>
+	  <button id="search-submit" type="submit">Go</button>
+	  <div id="levels">
+		<input type="radio" name="levels" value="2" id="level-2" {{if (or (eq .Levels "") (eq .Levels "2"))}} checked {{end}}>
+		<label for="level-2">Surface level</label>
+		<input type="radio" name="levels" value="3" id="level-3" {{if (eq .Levels "3")}} checked {{end}}>
+		<label for="level-3">Medium</label>
+		<input type="radio" name="levels" value="4" id="level-4" {{if (eq .Levels "4")}} checked {{end}}>
+		<label for="level-4">Deep</label>
+	  </div>
+	</form>
+	<main>
+	  {{if (ne .Category "")}}<iframe id="result-frame" src="/lookup?category={{.Category}}"></iframe>{{end}}
+	</main>
+	<footer>
+	  ©2022 by Zelly Snyder
+	</footer>
+	<script src="/static/public/lh-autocomplete.min.js" type="module" crossorigin="anonymous"></script>
+  </body>
+</html>
