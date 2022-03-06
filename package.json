@@ -4,6 +4,8 @@
   "description": "Fetch random article under a Wikipedia category(ies), recursively",
   "main": "src/index.js",
   "scripts": {
+    "build": "tsc",
+    "build:release": "tsc && java -jar $CLOSURE_COMPILER_PATH --js=public/lh-autocomplete.js --js_output_file=public/lh-autocomplete.min.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Zelly Snyder <zelly@outlook.com>",

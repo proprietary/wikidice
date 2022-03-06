@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"strconv"
 	"html/template"
 	"net/http"
@@ -97,7 +98,6 @@ func Ping(ctx context.Context) {
 	}
 }
 
-
 func Lookup(ctx context.Context, category string, levels int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -191,8 +191,6 @@ func PageIdToPageTitle(ctx context.Context, pageId int) string {
 }
 
 func handleLookup(w http.ResponseWriter, r *http.Request) {
-	const maxLevels int = 4
-	const minLevels int = 1
 	if r.Method != http.MethodGet {
 		http.Error(w, "", http.StatusMethodNotAllowed)
 		return
@@ -202,6 +200,7 @@ func handleLookup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing category in query string", http.StatusBadRequest)
 		return
 	}
+	category = cleanCategoryName(category)
 	var levels int = 2
 	levelsStr := r.URL.Query().Get("levels")
 	if levelsStr != "" {
@@ -247,8 +246,6 @@ func handleLookup(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGetCategoryMembers(w http.ResponseWriter, r *http.Request) {
-	const maxLevels int = 4
-	const minLevels int = 1
 	if r.Method != http.MethodGet {
 		http.Error(w, "", http.StatusMethodNotAllowed)
 		return
@@ -317,6 +314,7 @@ func handleCategoryAutocomplete(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	categoryStem = cleanCategoryName(categoryStem)
 	ctx := context.Background()
 	// TODO: add timeout
 	out, err := CategoryNameAutocomplete(ctx, categoryStem)
@@ -330,6 +328,20 @@ func handleCategoryAutocomplete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+}
+
+/// cleanCategoryName converts a user-generated category page name to one the database understands. It converts spaces to underscores.
+func cleanCategoryName(category string) string {
+	var clean strings.Builder
+	var space rune = ' '
+	for _, c := range category {
+		if c == space {
+			clean.WriteRune('_')
+		} else {
+			clean.WriteRune(c)
+		}
+	}
+	return clean.String()
 }
 
 // TODO: category input validation: is there a category for this name?
@@ -358,3 +370,8 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 //go:embed public/favicon.ico
 //go:embed public/favicon.png
 var staticAssets embed.FS
+
+const (
+	minLevels int = 1
+	maxLevels int = 4
+)

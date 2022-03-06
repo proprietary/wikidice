@@ -72,6 +72,7 @@ class Autocomplete extends HTMLElement {
 				completions = this.cache[q];
 			} else {
 				completions = await this.callApi(this.input?.value || '');
+				completions = completions.map((x: string) => Autocomplete.dirtyCategoryName(x));
 				this.cache[q] = completions;
 			}
 			this.updateDatalist(completions);
@@ -100,6 +101,19 @@ class Autocomplete extends HTMLElement {
 			option.value = completion;
 			this.datalist?.appendChild(option);
 		}
+	}
+
+	// Make the category name human readable.
+	private static dirtyCategoryName(category: string): string {
+		let newName = '';
+		for (let i = 0; i < category.length; ++i) {
+			if (category[i] === '_') {
+				newName += ' ';
+			} else {
+				newName += category[i];
+			}
+		}
+		return newName;
 	}
 }
 

@@ -28,6 +28,7 @@ class Autocomplete extends HTMLElement {
                 }
                 else {
                     completions = yield this.callApi(((_b = this.input) === null || _b === void 0 ? void 0 : _b.value) || '');
+                    completions = completions.map((x) => Autocomplete.dirtyCategoryName(x));
                     this.cache[q] = completions;
                 }
                 this.updateDatalist(completions);
@@ -102,6 +103,19 @@ class Autocomplete extends HTMLElement {
             option.value = completion;
             (_b = this.datalist) === null || _b === void 0 ? void 0 : _b.appendChild(option);
         }
+    }
+    // Make the category name human readable.
+    static dirtyCategoryName(category) {
+        let newName = '';
+        for (let i = 0; i < category.length; ++i) {
+            if (category[i] === '_') {
+                newName += ' ';
+            }
+            else {
+                newName += category[i];
+            }
+        }
+        return newName;
     }
 }
 window.customElements.define('lh-autocomplete', Autocomplete);
