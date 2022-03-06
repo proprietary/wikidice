@@ -52,6 +52,17 @@ func main() {
 	http.HandleFunc("/category-members", handleGetCategoryMembers)
 	http.HandleFunc("/category-autocomplete", handleCategoryAutocomplete)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticAssets))))
+	http.HandleFunc("/wikidice", func (w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `<!doctype html>
+<html>
+  <head>
+	<meta charset="utf-8">
+	<meta name="go-import" content="wikidice.libhack.so/wikidice git https://github.com/proprietary/wikidice">
+  </head>
+  <body>
+  </body>
+</html>`)
+	});
 	http.HandleFunc("/", handleIndex)
 
 	server := &http.Server{Addr: "0.0.0.0:42011", Handler: http.DefaultServeMux}
@@ -344,4 +355,6 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 //go:embed public/*.js
+//go:embed public/favicon.ico
+//go:embed public/favicon.png
 var staticAssets embed.FS
