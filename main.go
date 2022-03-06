@@ -1,20 +1,20 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
-	"strings"
-	"strconv"
-	"html/template"
-	"net/http"
-	"encoding/json"
-	"time"
 	"context"
+	"database/sql"
+	"embed"
+	"encoding/json"
+	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"html/template"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	"log"
-	"embed"
-	_ "github.com/go-sql-driver/mysql"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var db *sql.DB
@@ -53,7 +53,7 @@ func main() {
 	http.HandleFunc("/category-members", handleGetCategoryMembers)
 	http.HandleFunc("/category-autocomplete", handleCategoryAutocomplete)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticAssets))))
-	http.HandleFunc("/wikidice", func (w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/wikidice", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<!doctype html>
 <html>
   <head>
@@ -63,7 +63,7 @@ func main() {
   <body>
   </body>
 </html>`)
-	});
+	})
 	http.HandleFunc("/", handleIndex)
 
 	server := &http.Server{Addr: "0.0.0.0:42011", Handler: http.DefaultServeMux}
@@ -82,7 +82,7 @@ func main() {
 	// wait for SIGINT
 	<-stopCh
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Fatal(err)
@@ -239,7 +239,7 @@ func handleLookup(w http.ResponseWriter, r *http.Request) {
 		case context.Canceled:
 		}
 	}
-	if (!errored) {
+	if !errored {
 		w.Header().Set("Location", fmt.Sprintf("https://en.wikipedia.org/wiki/%s", pageTitle))
 		w.WriteHeader(http.StatusFound)
 	}
@@ -352,13 +352,13 @@ var indexHtml string
 func handleIndex(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.New("index")
 	tmpl.Parse(indexHtml)
-	input := struct{
+	input := struct {
 		Category string
-		Levels string
+		Levels   string
 	}{
 		Category: r.URL.Query().Get("category"),
-		Levels: r.URL.Query().Get("levels"),
-	};
+		Levels:   r.URL.Query().Get("levels"),
+	}
 	if err := tmpl.Execute(w, input); err != nil {
 		log.Println(err)
 		http.Error(w, "", http.StatusInternalServerError)
