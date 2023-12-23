@@ -9,7 +9,7 @@
     # E.g.
     #
     # nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nixpkgs.url = "github:NixOS/nixpkgs/23.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/release-23.11";
 
     utils.url = "github:numtide/flake-utils";
   };
@@ -35,19 +35,23 @@
     devShells.default = pkgs.mkShell rec {
       # Update the name to something that suites your project.
       name = "wikidice";
-
+      stdenv = pkgs.llvmPackages_16.libcxxStdenv;
       packages = with pkgs; [
         # Development Tools
-        llvmPackages_17.stdenv
+        gnumake
         cmake
-        cmakeCurses
-
+        extra-cmake-modules
+        python311Packages.python
+        pkg-config
+  
         # Development time dependencies
-        gtest
+        cppcheck
 
         # Build time and Run time dependencies
-        spdlog
-        abseil-cpp
+        boost183
+        rocksdb
+        lz4
+        gflags
       ];
 
       # Setting up the environment variables you need during
@@ -58,7 +62,6 @@
         export PS1="$(echo -e '\u${icon}') {\[$(tput sgr0)\]\[\033[38;5;228m\]\w\[$(tput sgr0)\]\[\033[38;5;15m\]} (${name}) \\$ \[$(tput sgr0)\]"
       '';
     };
-
     packages.default = pkgs.callPackage ./default.nix {};
   });
 }

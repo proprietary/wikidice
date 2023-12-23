@@ -1,17 +1,23 @@
 { lib
 , llvmPackages_17
+, boost183
 , cmake
-, spdlog
-, abseil-cpp }:
+, rocksdb
+, python311Packages.python
+}:
 
-llvmPackages_17.stdenv.mkDerivation rec {
+llvmPackages_17.libcxxStdenv.mkDerivation rec {
   pname = "wikidice";
   version = "0.2.0";
   
   src = ./.;
 
   nativeBuildInputs = [ cmake ];
-  buildInputs = [ spdlog abseil-cpp ];
+  buildInputs = [
+    boost183
+    rocksdb
+    llvmPackages_17.libcxx
+  ];
 
   cmakeFlags = [
     "-DENABLE_TESTING=OFF"

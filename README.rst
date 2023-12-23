@@ -1,6 +1,12 @@
 wikidice
 --------
 
+REWRITE IN PROGRESS: new version will be in C++ and use a more efficient database schema.
+
+---
+
+INSERT INTO `categorylinks` VALUES
+
 This software serves a random Wikipedia article within a specific category. Wikipedia itself has a Random Page feature, but it chooses a random article out of the entire site. I'm not interested in everything. If I want to learn a random topic just under a specific category, there's no way to do that. This is what `wikidice` is for. You can choose whichever category (as long as it has a "Category:" page) and a recursion depth for how many levels of subcategories you want to choose from. Try it out!
 
 Setting up the database
