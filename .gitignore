@@ -7,3 +7,4 @@ enwiki-*.sql.gz
 /build
 /.vscode
 .DS_Store
+/compile_commands.json
