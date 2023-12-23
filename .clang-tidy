@@ -1,0 +1,14 @@
+---
+Checks: '
+bugprone-*,
+cert-*,
+clang-analyzer-*,
+concurrency-*,
+cppcoreguidelines-*,
+google-runtime-*,
+misc-*,
+modernize-*,
+performance-*,
+'
+WarningsAsErrors: '*'
+FormatStyle: 'file'

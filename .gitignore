@@ -1,0 +1,9 @@
+/data
+enwiki-*.sql
+enwiki-*.sql.gz
+/mydb.db
+/db
+/_build
+/build
+/.vscode
+.DS_Store
