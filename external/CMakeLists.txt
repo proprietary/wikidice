@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
+include(FetchContent)
+
 # GoogleTest requires at least C++14
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +21,13 @@ add_subdirectory(spdlog-1.12.0)
 
 # Boost
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0)
+
+# MsgPack
+FetchContent_Declare(
+    msgpack-cxx
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/msgpack-cxx-6.1.0
+)
+FetchContent_MakeAvailable(msgpack-cxx)
 
 # RocksDB
 include(CompileRocksDB.cmake)

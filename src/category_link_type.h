@@ -14,6 +14,7 @@ enum class CategoryLinkType {
 
 auto from(std::string_view sv) -> CategoryLinkType;
 
+auto to_string(CategoryLinkType) -> std::string;
 
 struct CategoryLinksRow {
   std::string category_name;

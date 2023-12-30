@@ -259,7 +259,6 @@ TEST(SQLParser, CategoryTable) {
     ASSERT_EQ(row->category_id, 15);
     ASSERT_EQ(row->category_name, "Articles_needing_additional_references_from_January_2008");
     ASSERT_EQ(row->page_count, 1062);
-
     ASSERT_EQ(row->subcategory_count, 0);
     row = iter.next();
     ASSERT_TRUE(row.has_value());
@@ -276,11 +275,9 @@ TEST(SQLParser, CategoryTable) {
     row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->category_id, 18);
-
     ASSERT_EQ(row->category_name, "Figures_of_speech");
     ASSERT_EQ(row->page_count, 159);
     ASSERT_EQ(row->subcategory_count, 13);
-
     row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->category_id, 20);
@@ -288,12 +285,37 @@ TEST(SQLParser, CategoryTable) {
     ASSERT_EQ(row->page_count, 133);
     ASSERT_EQ(row->subcategory_count, 3);
     row = iter.next();
-
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->category_id, 21);
     ASSERT_EQ(row->category_name, "Muhammad_Ali");
     ASSERT_EQ(row->page_count, 17);
     ASSERT_EQ(row->subcategory_count, 5);
+}
+
+TEST(CategoryTable, TestMultipleStatements) {
+    const std::string input = R"(INSERT INTO `category` VALUES (2,'Unprintworthy_redirects',1607621,21,0);
+INSERT INTO `category` VALUES (3,'Something',999999999,12,0),(4,'asdfasdf',33,0);)";
+    std::istringstream stream{input};
+    auto iter = CategoryParser{stream};
+    auto row = iter.next();
+    ASSERT_TRUE(row.has_value());
+    ASSERT_EQ(row->category_id, 2);
+    ASSERT_EQ(row->category_name, "Unprintworthy_redirects");
+    ASSERT_EQ(row->page_count, 1607621);
+    ASSERT_EQ(row->subcategory_count, 21);
+    row = iter.next();
+    ASSERT_TRUE(row.has_value());
+    ASSERT_EQ(row->category_id, 3);
+    ASSERT_EQ(row->category_name, "Something");
+    ASSERT_EQ(row->page_count, 999999999);
+    ASSERT_EQ(row->subcategory_count, 12);
+    row = iter.next();
+    ASSERT_TRUE(row.has_value());
+    ASSERT_EQ(row->category_id, 4);
+    ASSERT_EQ(row->category_name, "asdfasdf");
+    ASSERT_EQ(row->page_count, 33);
+    ASSERT_EQ(row->subcategory_count, 0);
+    ASSERT_FALSE(iter.next().has_value());
 }
 
 TEST(BoundedStringRing, TestBoundedStringRingSimple) {

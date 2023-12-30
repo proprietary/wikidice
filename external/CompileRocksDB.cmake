@@ -15,15 +15,16 @@ set(RocksDB_CMAKE_ARGS
   -DWITH_ZSTD=OFF
   -DROCKSDB_BUILD_SHARED=OFF
   -DCMAKE_POSITION_INDEPENDENT_CODE=True
+  -DCMAKE_INSTALL_PREFIX="${CMAKE_BINARY_DIR}/rocksdb"
 )
 ExternalProject_Add(
-    rocksdb-compile
-    SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/rocksdb-8.9.1"
-    CMAKE_ARGS ${RocksDB_CMAKE_ARGS}
+  rocksdb
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/rocksdb-8.9.1"
+  CMAKE_ARGS ${RocksDB_CMAKE_ARGS}
 )
-ExternalProject_Get_Property(rocksdb-compile BINARY_DIR)
-add_library(rocksdb STATIC IMPORTED)
-set_target_properties(rocksdb PROPERTIES IMPORTED_LOCATION ${BINARY_DIR}/librocksdb.a)
-add_dependencies(rocksdb rocksdb-compile)
 
-list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR}/external/rocksdb/lib/cmake/rocksdb)
+add_library(rocksdb-compiled INTERFACE)
+add_dependencies(rocksdb-compiled rocksdb)
+ExternalProject_Get_Property(rocksdb INSTALL_DIR)
+target_link_libraries(rocksdb-compiled INTERFACE "${INSTALL_DIR}/lib/librocksdb.a")
+target_include_directories(rocksdb-compiled INTERFACE "${INSTALL_DIR}/include")

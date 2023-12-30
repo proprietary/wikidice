@@ -79,7 +79,9 @@ add_library(libwikidice STATIC)
 target_sources(
     libwikidice
     PUBLIC
+    src/cross_platform_endian.h
     src/category_link_type.h src/category_link_type.cc
+    src/category_table.h src/category_table.cc
     src/sql_parser.h src/sql_parser.cc
     src/bounded_string_ring.h src/bounded_string_ring.cc
     src/category_tree_index.h src/category_tree_index.cc
@@ -88,20 +90,21 @@ target_compile_features(libwikidice PRIVATE cxx_std_20)
 target_compile_options(
     libwikidice
     PRIVATE
-    -Wall -Wextra -pedantic -Werror -Wno-gcc-compat
-    -fsanitize=undefined,address,leak -fno-omit-frame-pointer
+    -Wall -Wextra -pedantic -Werror -Wno-gcc-compat -g3
+    #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
-target_link_options(
-    libwikidice
-    PRIVATE -fuse-ld=lld -fsanitize=undefined,address,leak
-)
-add_dependencies(libwikidice rocksdb-compile)
+#target_link_options(
+#    libwikidice
+#    PRIVATE -fsanitize=undefined,address
+#)
+add_dependencies(libwikidice rocksdb-compiled)
 target_link_libraries(
     libwikidice
     PUBLIC
     fmt::fmt sqlite3::sqlite3 absl::time spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES}
     RocksDB::rocksdb
-    absl::log absl::flat_hash_map
+    absl::log absl::flat_hash_map absl::random_random absl::random_bit_gen_ref absl::flags
+    msgpack-cxx
 )
 target_include_directories(
     libwikidice
@@ -122,14 +125,19 @@ target_compile_features(WikiDice PRIVATE cxx_std_20)
 target_compile_options(
     WikiDice
     PRIVATE
-    -Wall -Wextra -pedantic -Werror -Wno-gcc-compat
-    -fsanitize=undefined,address,leak -fno-omit-frame-pointer
+    -Wall -Wextra -pedantic -Werror -Wno-gcc-compat -g3
+    #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
-target_link_options(
+#target_link_options(
+#    WikiDice
+#    PRIVATE -fsanitize=undefined,address
+#)
+target_link_libraries(
     WikiDice
-    PRIVATE -fuse-ld=lld -fsanitize=undefined,address,leak
+    PRIVATE
+    libwikidice fmt::fmt sqlite3::sqlite3 absl::time spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES}
+    absl::flags absl::flags_parse absl::flags_usage
 )
-target_link_libraries(WikiDice PRIVATE libwikidice fmt::fmt sqlite3::sqlite3 absl::time spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES})
 target_include_directories(WikiDice PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
 
 # CMake scripts extensions
