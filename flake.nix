@@ -41,17 +41,13 @@
         gnumake
         cmake
         extra-cmake-modules
-        python311Packages.python
         pkg-config
   
         # Development time dependencies
         cppcheck
 
         # Build time and Run time dependencies
-        boost183
-        rocksdb
         lz4
-        gflags
       ];
 
       # Setting up the environment variables you need during

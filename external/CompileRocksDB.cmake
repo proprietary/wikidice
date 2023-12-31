@@ -1,5 +1,8 @@
 include(ExternalProject)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LZ4 REQUIRED IMPORTED_TARGET liblz4)
+
 set(RocksDB_CMAKE_ARGS
   -DUSE_RTTI=1
   -DFAIL_ON_WARNINGS=OFF
@@ -19,12 +22,16 @@ set(RocksDB_CMAKE_ARGS
 )
 ExternalProject_Add(
   rocksdb
+  PREFIX "${CMAKE_BINARY_DIR}/rocksdb"
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/rocksdb-8.9.1"
   CMAKE_ARGS ${RocksDB_CMAKE_ARGS}
+  BUILD_BYPRODUCTS <BINARY_DIR>/librocksdb.a
+  INSTALL_COMMAND ""
 )
 
 add_library(rocksdb-compiled INTERFACE)
 add_dependencies(rocksdb-compiled rocksdb)
-ExternalProject_Get_Property(rocksdb INSTALL_DIR)
-target_link_libraries(rocksdb-compiled INTERFACE "${INSTALL_DIR}/lib/librocksdb.a")
-target_include_directories(rocksdb-compiled INTERFACE "${INSTALL_DIR}/include")
+ExternalProject_Get_Property(rocksdb BINARY_DIR)
+target_link_libraries(rocksdb-compiled INTERFACE "${BINARY_DIR}/librocksdb.a")
+ExternalProject_Get_Property(rocksdb SOURCE_DIR)
+target_include_directories(rocksdb-compiled INTERFACE "${SOURCE_DIR}/include")
