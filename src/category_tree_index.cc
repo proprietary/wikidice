@@ -7,7 +7,6 @@
 #include <array>
 #include <fmt/core.h>
 #include <iterator>
-#include <nlohmann/json.hpp>
 #include <queue>
 #include <span>
 #include <stdexcept>

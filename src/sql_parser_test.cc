@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include <sstream>
-#include <spdlog/spdlog.h>
 
 #include "bounded_string_ring.h"
 #include "sql_parser.h"
@@ -375,7 +374,6 @@ TEST(BoundedStringRing, TestBoundedStringRingOverflow) {
 }
 
 auto main(int argc, char** argv) -> int {
-    spdlog::set_level(spdlog::level::debug);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

@@ -4,6 +4,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Do not build in-source. Please remove CMakeCache.txt and the CMakeFiles/ directory. Then build out-of-source.")
 endif()
 
+if (CMAKE_BUILD_TYPE MATCHES Debug)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
+endif()
+
 # Put the project early since modules might need to detect the compiler.
 # More information https://cmake.org/cmake/help/latest/command/project.html
 project(
@@ -41,10 +45,6 @@ find_package(Threads REQUIRED)
 
 # External dependencies
 add_subdirectory(external)
-list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR}/external/rocksdb/lib/cmake/rocksdb)
-find_package(Boost COMPONENTS system program_options REQUIRED)
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-find_package(RocksDB REQUIRED)
 
 # It is always easier to navigate in an IDE when projects are organized in folders.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -78,65 +78,72 @@ find_lto(CXX)
 add_library(libwikidice STATIC)
 target_sources(
     libwikidice
-    PUBLIC
+    PRIVATE
     src/cross_platform_endian.h
     src/category_link_type.h src/category_link_type.cc
     src/category_table.h src/category_table.cc
     src/sql_parser.h src/sql_parser.cc
     src/bounded_string_ring.h src/bounded_string_ring.cc
     src/category_tree_index.h src/category_tree_index.cc
+    PUBLIC
+    src/category_link_type.h
+    src/sql_parser.h
+    src/category_tree_index.h
 )
 target_compile_features(libwikidice PRIVATE cxx_std_20)
 target_compile_options(
     libwikidice
     PRIVATE
-    -Wall -Wextra -pedantic -Werror -Wno-gcc-compat -g3
+    -Wno-gcc-compat
+    -Wall -Wextra -pedantic -Werror -g3
     #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
-#target_link_options(
-#    libwikidice
-#    PRIVATE -fsanitize=undefined,address
-#)
-add_dependencies(libwikidice rocksdb-compiled)
+# target_link_options(
+#     libwikidice
+#     PRIVATE
+#     -fsanitize=undefined,address
+# )
 target_link_libraries(
     libwikidice
     PUBLIC
-    fmt::fmt sqlite3::sqlite3 absl::time spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES}
-    RocksDB::rocksdb
-    absl::log absl::flat_hash_map absl::random_random absl::random_bit_gen_ref absl::flags
+    fmt::fmt sqlite3::sqlite3 spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES}
+    absl::flags absl::flags_usage absl::flags_parse
+    absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
+    absl::log absl::absl_check absl::log_flags absl::log_sink
+    rocksdb-compiled
     msgpack-cxx
+    "/usr/local/lib/liblz4.a"
 )
 target_include_directories(
     libwikidice
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0
-    "/Users/zds/src/zelcon.net/wikidice/_build/external/rocksdb/include"
-    ${CMAKE_CURRENT_LIST_DIR}/external/com_github_nlohmann_json_v3.11.3/include
-    ${CMAKE_CURRENT_LIST_DIR}/external/rapidjson-1.1.0/include
+    ${CMAKE_CURRENT_LIST_DIR}/external/abseil-cpp
 )
 
 add_executable(WikiDice)
 target_sources(
     WikiDice
-    PRIVATE
+    PUBLIC
+    src/build_category_tree.h
     src/build_category_tree.cc
 )
 target_compile_features(WikiDice PRIVATE cxx_std_20)
 target_compile_options(
     WikiDice
     PRIVATE
-    -Wall -Wextra -pedantic -Werror -Wno-gcc-compat -g3
+    -Wno-gcc-compat
+    -Wall -Wextra -pedantic -Werror -g3
     #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
-#target_link_options(
-#    WikiDice
-#    PRIVATE -fsanitize=undefined,address
-#)
+# target_link_options(
+#     WikiDice
+#     PRIVATE -fsanitize=undefined,address
+# )
 target_link_libraries(
     WikiDice
     PRIVATE
-    libwikidice fmt::fmt sqlite3::sqlite3 absl::time spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES}
-    absl::flags absl::flags_parse absl::flags_usage
+    libwikidice fmt::fmt Threads::Threads ${Boost_LIBRARIES}
 )
 target_include_directories(WikiDice PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
 
