@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include "category_tree_index.h"
+#include <gtest/gtest.h>
 #include <msgpack.hpp>
 
 namespace net_zelcon::wikidice::test {

@@ -31,7 +31,7 @@ class CategoryLinkRecord {
     auto subcategories_mut() noexcept -> std::vector<std::string> & {
         return subcategories_;
     }
-    auto weight_mut() noexcept -> uint64_t& { return weight_; }
+    auto weight_mut() noexcept -> uint64_t & { return weight_; }
     friend bool operator==(const CategoryLinkRecord &lhs,
                            const CategoryLinkRecord &rhs) {
         return lhs.pages_ == rhs.pages_ &&
@@ -53,20 +53,15 @@ class CategoryLinkRecord {
 };
 
 class CategoryTreeIndex {
-  private:
+  protected:
     rocksdb::DB *db_;
     std::vector<rocksdb::ColumnFamilyHandle *> column_family_handles_;
     rocksdb::ColumnFamilyHandle *categorylinks_cf_;
-    std::shared_ptr<CategoryTable> category_table_;
     msgpack::zone zone_;
 
-    static constexpr size_t PREFIX_CAP_LEN = 8;
-    static constexpr size_t BLOOM_FILTER_BITS_PER_KEY = 10;
-
   public:
-    CategoryTreeIndex(const std::filesystem::path db_path,
-                      std::shared_ptr<CategoryTable> category_table);
-    ~CategoryTreeIndex() {
+    explicit CategoryTreeIndex(const std::filesystem::path db_path);
+    virtual ~CategoryTreeIndex() {
         for (auto cf : column_family_handles_) {
             delete cf;
         }
@@ -75,7 +70,6 @@ class CategoryTreeIndex {
     CategoryTreeIndex(const CategoryTreeIndex &other) = delete;
     CategoryTreeIndex &operator=(const CategoryTreeIndex &other) = delete;
     CategoryTreeIndex(CategoryTreeIndex &&other) {
-        category_table_ = std::move(other.category_table_);
         zone_ = std::move(other.zone_);
         db_ = other.db_;
         other.db_ = nullptr;
@@ -84,7 +78,6 @@ class CategoryTreeIndex {
         other.categorylinks_cf_ = nullptr;
     }
     CategoryTreeIndex &operator=(CategoryTreeIndex &&other) {
-        category_table_ = std::move(other.category_table_);
         zone_ = std::move(other.zone_);
         db_ = other.db_;
         other.db_ = nullptr;
@@ -96,23 +89,10 @@ class CategoryTreeIndex {
 
     auto db() const noexcept -> rocksdb::DB * { return db_; }
 
-    void import_categorylinks_row(const CategoryLinksRow &);
-
-    void run_second_pass();
-
-    auto pick(std::string_view category_name,
-              absl::BitGenRef random_generator) -> std::optional<std::uint64_t>;
-
-    auto search_categories(std::string_view category_name_prefix)
-        -> std::vector<std::string>;
-
-  private:
     auto
     get(std::string_view category_name) -> std::optional<CategoryLinkRecord>;
 
-    auto set(std::string_view category_name,
-             const CategoryLinkRecord &) -> void;
-
+  protected:
     auto
     lookup_pages(std::string_view category_name) -> std::vector<std::uint64_t>;
 
@@ -122,6 +102,28 @@ class CategoryTreeIndex {
     auto lookup_weight(std::string_view category_name)
         -> std::optional<std::uint64_t>;
 
+    auto at_index(std::string_view category_name,
+                  std::uint64_t index) -> std::uint64_t;
+
+  private:
+    static constexpr size_t PREFIX_CAP_LEN = 8;
+    static constexpr size_t BLOOM_FILTER_BITS_PER_KEY = 10;
+};
+
+class CategoryTreeIndexWriter : public CategoryTreeIndex {
+  public:
+    void import_categorylinks_row(const CategoryLinksRow &);
+
+    void run_second_pass();
+
+    explicit CategoryTreeIndexWriter(
+        const std::filesystem::path db_path,
+        std::shared_ptr<CategoryTable> category_table)
+        : CategoryTreeIndex(db_path), category_table_{category_table} {}
+
+  private:
+    void set(std::string_view category_name, const CategoryLinkRecord &);
+
     void add_subcategory(const std::string_view category_name,
                          const std::string_view subcategory_name);
 
@@ -130,9 +132,6 @@ class CategoryTreeIndex {
 
     void set_weight(const std::string_view category_name,
                     const std::uint64_t weight);
-
-    auto at_index(std::string_view category_name,
-                  std::uint64_t index) -> std::uint64_t;
 
     void build_weights();
 
@@ -151,6 +150,21 @@ class CategoryTreeIndex {
         std::string_view category_name,
         float32_t max_depth = std::numeric_limits<float32_t>::infinity())
         -> std::uint64_t;
+
+  private:
+    std::shared_ptr<CategoryTable> category_table_;
+};
+
+class CategoryTreeIndexReader : public CategoryTreeIndex {
+  public:
+    auto pick(std::string_view category_name,
+              absl::BitGenRef random_generator) -> std::optional<std::uint64_t>;
+
+    auto search_categories(std::string_view category_name_prefix)
+        -> std::vector<std::string>;
+
+    explicit CategoryTreeIndexReader(const std::filesystem::path db_path)
+        : CategoryTreeIndex(db_path) {}
 };
 
 } // namespace net_zelcon::wikidice

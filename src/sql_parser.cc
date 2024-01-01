@@ -2,10 +2,10 @@
 #include "bounded_string_ring.h"
 #include <absl/log/log.h>
 #include <array>
-#include <cctype>
 #include <boost/algorithm/algorithm.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/classification.hpp>
+#include <cctype>
 #include <deque>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -35,12 +35,13 @@ void advance_to(std::istream &stream, std::string_view target) {
     }
 }
 
-auto read_values_list(std::istream& stream) -> std::vector<std::string> {
+auto read_values_list(std::istream &stream) -> std::vector<std::string> {
     std::vector<std::string> dst;
     const auto expect_number = [&stream]() -> std::string {
         std::string result;
         char c = std::char_traits<char>::eof();
-        while (stream.good() && (c = stream.get()) != std::char_traits<char>::eof()) {
+        while (stream.good() &&
+               (c = stream.get()) != std::char_traits<char>::eof()) {
             if (c == '\n') {
                 continue;
             } else if (c >= '0' && c <= '9') {
@@ -90,7 +91,8 @@ auto read_values_list(std::istream& stream) -> std::vector<std::string> {
             dst.push_back(s);
             // stream.unget();
             // const char c = stream.get();
-            // CHECK_EQ('\'', c) << "expected closing quote after reading: " << std::quoted(s);
+            // CHECK_EQ('\'', c) << "expected closing quote after reading: " <<
+            // std::quoted(s);
         } else if (c >= '0' && c <= '9') {
             dst.emplace_back(expect_number());
         } else {
@@ -100,16 +102,16 @@ auto read_values_list(std::istream& stream) -> std::vector<std::string> {
     return dst;
 }
 
-void unescape(std::string&) {
+void unescape(std::string &) {
     // TODO
 }
 
-void remove_newlines(std::string& s) {
+void remove_newlines(std::string &s) {
     const auto new_end = std::remove(s.begin(), s.end(), '\n');
     s.erase(new_end, s.end());
 }
 
-void sanitize(std::string& s) {
+void sanitize(std::string &s) {
     remove_newlines(s);
     unescape(s);
 }
@@ -168,7 +170,8 @@ auto CategoryParser::next() -> std::optional<CategoryRow> {
     if (!row.has_value()) {
         return std::nullopt;
     }
-    CHECK(row->size() == 5) << "row has " << row->size() << " elements: " << fmt::format("{}", row.value());
+    CHECK(row->size() == 5) << "row has " << row->size()
+                            << " elements: " << fmt::format("{}", row.value());
     CategoryRow result;
     result.category_id = std::stoull(row->at(0));
     result.category_name = row->at(1);

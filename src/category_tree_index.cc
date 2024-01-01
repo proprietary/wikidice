@@ -15,10 +15,7 @@
 
 namespace net_zelcon::wikidice {
 
-CategoryTreeIndex::CategoryTreeIndex(
-    const std::filesystem::path db_path,
-    std::shared_ptr<CategoryTable> category_table)
-    : category_table_(category_table) {
+CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     rocksdb::ColumnFamilyOptions cf_options;
     cf_options.write_buffer_size = 128 * (1 << 20);
@@ -78,8 +75,8 @@ auto CategoryTreeIndex::get(std::string_view category_name)
     return o.as<CategoryLinkRecord>();
 }
 
-auto CategoryTreeIndex::set(std::string_view category_name,
-                            const CategoryLinkRecord &record) -> void {
+auto CategoryTreeIndexWriter::set(std::string_view category_name,
+                                  const CategoryLinkRecord &record) -> void {
     // 1. Serialize
     msgpack::sbuffer buf;
     msgpack::pack(buf, record);
@@ -90,7 +87,8 @@ auto CategoryTreeIndex::set(std::string_view category_name,
     CHECK(status.ok()) << "Write of record failed: " << status.ToString();
 }
 
-void CategoryTreeIndex::import_categorylinks_row(const CategoryLinksRow &row) {
+void CategoryTreeIndexWriter::import_categorylinks_row(
+    const CategoryLinksRow &row) {
     const auto category_row = category_table_->find(row.category_name);
     if (!category_row) {
         LOG(WARNING)
@@ -112,7 +110,7 @@ void CategoryTreeIndex::import_categorylinks_row(const CategoryLinksRow &row) {
     }
 }
 
-void CategoryTreeIndex::add_subcategory(
+void CategoryTreeIndexWriter::add_subcategory(
     const std::string_view category_name,
     const std::string_view subcategory_name) {
     auto record = get(category_name);
@@ -122,8 +120,8 @@ void CategoryTreeIndex::add_subcategory(
     set(category_name, record.value());
 }
 
-void CategoryTreeIndex::add_page(const std::string_view category_name,
-                                 const std::uint64_t page_id) {
+void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
+                                       const std::uint64_t page_id) {
     auto record = get(category_name);
     if (!record)
         record.emplace();
@@ -158,8 +156,8 @@ auto CategoryTreeIndex::lookup_weight(std::string_view category_name)
         return std::nullopt;
 }
 
-void CategoryTreeIndex::set_weight(const std::string_view category_name,
-                                   const std::uint64_t weight) {
+void CategoryTreeIndexWriter::set_weight(const std::string_view category_name,
+                                         const std::uint64_t weight) {
     auto record = get(category_name);
     if (record) {
         record->weight(weight);
@@ -173,8 +171,8 @@ void CategoryTreeIndex::set_weight(const std::string_view category_name,
     }
 }
 
-auto CategoryTreeIndex::pick(std::string_view category_name,
-                             absl::BitGenRef random_generator)
+auto CategoryTreeIndexReader::pick(std::string_view category_name,
+                                   absl::BitGenRef random_generator)
     -> std::optional<std::uint64_t> {
     const auto weight = lookup_weight(category_name);
     if (!weight) {
@@ -215,7 +213,7 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
 
 // Run second-pass to build the "weights" column family, which consists of the
 // recursive sum of all the pages under a category.
-void CategoryTreeIndex::build_weights() {
+void CategoryTreeIndexWriter::build_weights() {
     rocksdb::ReadOptions read_options;
     read_options.adaptive_readahead = true;
     read_options.total_order_seek = true; // ignore prefix Bloom filter in read
@@ -228,8 +226,8 @@ void CategoryTreeIndex::build_weights() {
     CHECK(it->status().ok()) << it->status().ToString();
 }
 
-auto CategoryTreeIndex::compute_weight(std::string_view category_name,
-                                       float32_t max_depth) -> std::uint64_t {
+auto CategoryTreeIndexWriter::compute_weight(
+    std::string_view category_name, float32_t max_depth) -> std::uint64_t {
     uint64_t weight = 0;
     if (!get(category_name)) {
         LOG(WARNING) << "category name: " << std::quoted(category_name)
@@ -258,7 +256,7 @@ auto CategoryTreeIndex::compute_weight(std::string_view category_name,
     return weight;
 }
 
-auto CategoryTreeIndex::run_second_pass() -> void {
+auto CategoryTreeIndexWriter::run_second_pass() -> void {
     build_weights();
     // make sure compression is complete
     rocksdb::FlushOptions flush_options;
@@ -266,8 +264,8 @@ auto CategoryTreeIndex::run_second_pass() -> void {
     db_->Flush(flush_options);
 }
 
-auto CategoryTreeIndex::search_categories(std::string_view category_name_prefix)
-    -> std::vector<std::string> {
+auto CategoryTreeIndexReader::search_categories(
+    std::string_view category_name_prefix) -> std::vector<std::string> {
     std::vector<std::string> autocompletions{};
     static constexpr size_t MAX_CATEGORY_NAME_PREFIX_LEN = 1'000;
     if (category_name_prefix.length() > MAX_CATEGORY_NAME_PREFIX_LEN)

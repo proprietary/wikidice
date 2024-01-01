@@ -17,12 +17,12 @@ auto from(std::string_view sv) -> CategoryLinkType {
 
 auto to_string(CategoryLinkType type) -> std::string {
     switch (type) {
-        case CategoryLinkType::PAGE:
-            return "page";
-        case CategoryLinkType::SUBCAT:
-            return "subcat";
-        case CategoryLinkType::FILE:
-            return "file";
+    case CategoryLinkType::PAGE:
+        return "page";
+    case CategoryLinkType::SUBCAT:
+        return "subcat";
+    case CategoryLinkType::FILE:
+        return "file";
     }
     throw std::invalid_argument("invalid category link type");
 }

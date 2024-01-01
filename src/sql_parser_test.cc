@@ -3,8 +3,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <istream>
-#include <sstream>
 #include <locale>
+#include <sstream>
 
 #include "bounded_string_ring.h"
 #include "sql_parser.h"

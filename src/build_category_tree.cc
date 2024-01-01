@@ -48,7 +48,7 @@ auto read_category_table(const std::filesystem::path sqldump)
     return category_table;
 }
 
-auto read_categorylinks_table(CategoryTreeIndex &dst,
+auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
                               const std::filesystem::path sqldump) -> void {
     std::ifstream infile{sqldump};
     CategoryLinksParser categorylinks_parser{infile};
@@ -56,11 +56,11 @@ auto read_categorylinks_table(CategoryTreeIndex &dst,
     while (auto row = categorylinks_parser.next()) {
         dst.import_categorylinks_row(row.value());
         if (++counter % 1'000'000 == 0)
-            LOG(INFO) << fmt::format(
-                "Imported {:L} rows. Last imported row: "
-                "page_id={} (a {}) → category_name={}",
-                counter, row->page_id, to_string(row->page_type),
-                row->category_name);
+            LOG(INFO) << fmt::format("Imported {:L} rows. Last imported row: "
+                                     "page_id={} (a {}) → category_name={}",
+                                     counter, row->page_id,
+                                     to_string(row->page_type),
+                                     row->category_name);
     }
 }
 
@@ -95,7 +95,8 @@ int main(int argc, char *argv[]) {
     const auto db_destination_path =
         std::filesystem::path{absl::GetFlag(FLAGS_db_path)} /
         std::filesystem::path{absl::GetFlag(FLAGS_wikipedia_language_code)};
-    CategoryTreeIndex category_tree_index{db_destination_path, category_table};
+    CategoryTreeIndexWriter category_tree_index{db_destination_path,
+                                                category_table};
     std::ifstream categorylinks_dump_stream{
         absl::GetFlag(FLAGS_categorylinks_dump)};
     LOG(INFO) << "Reading categorylinks table from "
