@@ -27,6 +27,7 @@ FetchContent_MakeAvailable(msgpack-cxx)
 # zstandard
 set(ZSTD_BUILD_STATIC ON)
 set(ZSTD_BUILD_SHARED OFF)
+set(ZSTD_BUILD_TESTS OFF)
 FetchContent_Declare(
     zstd
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/zstd-1.5.5

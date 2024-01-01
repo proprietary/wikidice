@@ -80,10 +80,12 @@ target_sources(
     src/sql_parser.h src/sql_parser.cc
     src/bounded_string_ring.h src/bounded_string_ring.cc
     src/category_tree_index.h src/category_tree_index.cc
+    src/wikidice_query.h src/wikidice_query.cc
     PUBLIC
     src/category_link_type.h
     src/sql_parser.h
     src/category_tree_index.h
+    src/wikidice_query.h
 )
 target_compile_features(libwikidice PRIVATE cxx_std_23)
 target_compile_options(
@@ -91,13 +93,13 @@ target_compile_options(
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
-    #-fsanitize=undefined,address -fno-omit-frame-pointer
+    -fsanitize=undefined,address -fno-omit-frame-pointer
 )
-# target_link_options(
-#     libwikidice
-#     PRIVATE
-#     -fsanitize=undefined,address
-# )
+target_link_options(
+    libwikidice
+    PRIVATE
+    -fsanitize=undefined,address -fuse-ld=lld
+)
 target_link_libraries(
     libwikidice
     PUBLIC
@@ -105,6 +107,8 @@ target_link_libraries(
     absl::flags absl::flags_usage absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
     absl::log absl::absl_check absl::log_flags absl::log_sink
+    absl::random_random absl::random_bit_gen_ref
+    absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     rocksdb-compiled
     msgpack-cxx
     libzstd_static
@@ -113,7 +117,7 @@ target_include_directories(
     libwikidice
     PUBLIC
     "${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0"
-    "${CMAKE_CURRENT_LIST_DIR}/external/abseil-cpp"
+    #"${CMAKE_CURRENT_LIST_DIR}/external/abseil-cpp"
     "${CMAKE_CURRENT_LIST_DIR}/external/zstd-1.5.5/lib"
 )
 
@@ -130,12 +134,12 @@ target_compile_options(
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
-    #-fsanitize=undefined,address -fno-omit-frame-pointer
+    -fsanitize=undefined,address -fno-omit-frame-pointer
 )
-# target_link_options(
-#     wikidice_builder
-#     PRIVATE -fsanitize=undefined,address
-# )
+target_link_options(
+    wikidice_builder
+    PRIVATE -fsanitize=undefined,address -fuse-ld=lld
+)
 target_link_libraries(
     wikidice_builder
     PRIVATE
@@ -143,54 +147,7 @@ target_link_libraries(
 )
 target_include_directories(wikidice_builder PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
 
-# Enable link-time optimization
-target_enable_lto(wikidice_builder optimized) # Enable link-time optimization if available for non-debug configurations
-copy_dlls_for_debug(wikidice_builder "" "") # Copy dependencies next to the executable (DLLs for example)
-
-
-add_executable(
-    wikidice_query
-)
-target_sources(
-    wikidice_query
-    PUBLIC
-    src/wikidice_query.h src/wikidice_query.cc
-)
-target_compile_features(
-    wikidice_query
-    PRIVATE
-    cxx_std_23
-)
-target_compile_options(
-    wikidice_query
-    PRIVATE
-    -Wno-gcc-compat
-    -Wall -Wextra -pedantic -Werror -g3
-    -fsanitize=undefined,address -fno-omit-frame-pointer
-)
-target_link_options(
-    wikidice_query
-    PRIVATE
-    -fsanitize=undefined,address
-)
-target_link_libraries(
-    wikidice_query
-    PRIVATE
-    libwikidice
-    absl::log absl::absl_check absl::log_flags absl::log_sink
-    absl::flags absl::flags_usage absl::flags_parse
-)
-target_include_directories(
-    wikidice_query
-    PRIVATE
-    "${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0"
-)
-
-# Enable link-time optimization
-target_enable_lto(wikidice_query optimized)
-copy_dlls_for_debug(wikidice_query "" "")
-
-
+# Python module
 pybind11_add_module(pywikidice src/pywikidice.cc)
 target_compile_features(pywikidice PRIVATE cxx_std_23)
 target_link_libraries(pywikidice PRIVATE libwikidice)
@@ -209,11 +166,15 @@ enable_testing()
 
 add_executable(sql_parser_test src/sql_parser_test.cc)
 target_compile_features(sql_parser_test PRIVATE cxx_std_23)
+target_compile_options(sql_parser_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
 target_link_libraries(sql_parser_test PRIVATE gtest_main gmock_main gmock libwikidice)
+target_link_options(sql_parser_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
 
 add_executable(category_tree_index_test src/category_tree_index_test.cc)
 target_compile_features(category_tree_index_test PRIVATE cxx_std_23)
+target_compile_options(category_tree_index_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
 target_link_libraries(category_tree_index_test PRIVATE gtest_main gmock_main gmock libwikidice)
+target_link_options(category_tree_index_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
 
 include(GoogleTest)
 gtest_discover_tests(sql_parser_test)
