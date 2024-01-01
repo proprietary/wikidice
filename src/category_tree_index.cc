@@ -1,6 +1,5 @@
 #include "category_tree_index.h"
 
-#include "cross_platform_endian.h"
 #include <absl/log/check.h>
 #include <absl/log/log.h>
 #include <algorithm>
@@ -8,59 +7,13 @@
 #include <fmt/core.h>
 #include <iterator>
 #include <queue>
-#include <span>
+#include <rocksdb/filter_policy.h>
+#include <rocksdb/slice_transform.h>
+#include <rocksdb/table.h>
 #include <stdexcept>
+#include <zstd.h>
 
 namespace net_zelcon::wikidice {
-
-namespace {
-
-auto deserialize_pages(const rocksdb::Slice &data)
-    -> std::vector<std::uint64_t> {
-    msgpack::object_handle oh;
-    std::vector<std::uint64_t> pages;
-    msgpack::unpack(oh, data.data(), data.size());
-    oh.get().convert(pages);
-    return pages;
-}
-
-auto serialize_pages(msgpack::sbuffer &sbuf,
-                     const std::vector<std::uint64_t> &pages) -> void {
-    sbuf.clear();
-    msgpack::pack(sbuf, pages);
-}
-
-auto deserialize_subcats(const rocksdb::Slice &data)
-    -> std::vector<std::string> {
-    msgpack::object_handle oh;
-    std::vector<std::string> subcats;
-    msgpack::unpack(oh, data.data(), data.size());
-    oh.get().convert(subcats);
-    return subcats;
-}
-
-auto serialize_subcats(msgpack::sbuffer &sbuf,
-                       const std::vector<std::string> &subcats) -> void {
-    sbuf.clear();
-    msgpack::pack(sbuf, subcats);
-}
-
-auto deserialize_weight(const rocksdb::Slice &data) -> std::uint64_t {
-    const uint64_t weight_le = *reinterpret_cast<const uint64_t *>(data.data());
-    return le64toh(weight_le);
-}
-
-auto serialize_weight(const std::uint64_t weight)
-    -> std::array<std::uint8_t, sizeof(std::uint64_t)> {
-    auto weight_le = htole64(weight);
-    std::array<std::uint8_t, sizeof(std::uint64_t)> result;
-    std::copy(reinterpret_cast<std::uint8_t *>(&weight_le),
-              reinterpret_cast<std::uint8_t *>(&weight_le) + sizeof(weight_le),
-              std::begin(result));
-    return result;
-}
-
-} // namespace
 
 CategoryTreeIndex::CategoryTreeIndex(
     const std::filesystem::path db_path,
@@ -68,11 +21,26 @@ CategoryTreeIndex::CategoryTreeIndex(
     : category_table_(category_table) {
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     rocksdb::ColumnFamilyOptions cf_options;
-    cf_options.compression = rocksdb::kLZ4Compression;
-    column_families.emplace_back(rocksdb::kDefaultColumnFamilyName, cf_options);
-    column_families.emplace_back("subcategories", cf_options);
-    column_families.emplace_back("pages", cf_options);
-    column_families.emplace_back("weight", cf_options);
+    cf_options.write_buffer_size = 128 * (1 << 20);
+    // enable compression
+    cf_options.compression = rocksdb::kZSTD;
+    cf_options.bottommost_compression = rocksdb::kZSTD;
+    cf_options.compression_opts.level = ZSTD_maxCLevel();
+    cf_options.compression_opts.max_dict_bytes = 8192;
+    cf_options.compression_opts.zstd_max_train_bytes = 8192;
+    // enable Bloom filter for efficient prefix seek
+    rocksdb::BlockBasedTableOptions table_options;
+    table_options.filter_policy.reset(
+        rocksdb::NewRibbonFilterPolicy(BLOOM_FILTER_BITS_PER_KEY));
+    cf_options.table_factory.reset(
+        rocksdb::NewBlockBasedTableFactory(table_options));
+    cf_options.prefix_extractor.reset(
+        rocksdb::NewCappedPrefixTransform(PREFIX_CAP_LEN));
+    // setup column families
+    column_families.emplace_back(rocksdb::kDefaultColumnFamilyName,
+                                 rocksdb::ColumnFamilyOptions{});
+    column_families.emplace_back("categorylinks", cf_options);
+    // setup database
     rocksdb::DBOptions db_options;
     db_options.create_if_missing = true;
     db_options.create_missing_column_families = true;
@@ -81,16 +49,45 @@ CategoryTreeIndex::CategoryTreeIndex(
         rocksdb::DB::Open(db_options, db_path.string(), column_families,
                           &column_family_handles_, &db_);
     if (!status.ok()) {
-        LOG(FATAL) << fmt::format("failed to open db at {}: {}",
-                                  db_path.string(), status.ToString());
+        LOG(FATAL) << "Failed to open db at " << db_path.string() << ": "
+                   << status.ToString();
     }
-    CHECK(column_family_handles_.size() == 4);
-    CHECK(column_family_handles_[1]->GetName() == "subcategories");
-    subcategories_cf_ = column_family_handles_[1];
-    CHECK(column_family_handles_[2]->GetName() == "pages");
-    pages_cf_ = column_family_handles_[2];
-    CHECK(column_family_handles_[3]->GetName() == "weight");
-    weight_cf_ = column_family_handles_[3];
+    CHECK(column_family_handles_.size() == 2);
+    CHECK(column_family_handles_[1]->GetName() == "categorylinks");
+    categorylinks_cf_ = column_family_handles_[1];
+}
+
+auto CategoryTreeIndex::get(std::string_view category_name)
+    -> std::optional<CategoryLinkRecord> {
+    // 1. Retrieve from RocksDB database
+    rocksdb::Slice key{category_name.data(), category_name.length()};
+    rocksdb::PinnableSlice value;
+    rocksdb::ReadOptions read_options;
+    const auto status = db_->Get(read_options, categorylinks_cf_, key, &value);
+    if (!status.ok()) {
+        if (status.IsNotFound()) {
+            return std::nullopt;
+        }
+        // TODO: make this recoverable
+        LOG(FATAL) << "Failed to get category_name: " << category_name
+                   << " status: " << status.ToString();
+    }
+    // 2. Deserialize
+    const auto o = msgpack::unpack(zone_, value.data(), value.size());
+    CHECK(!o.is_nil());
+    return o.as<CategoryLinkRecord>();
+}
+
+auto CategoryTreeIndex::set(std::string_view category_name,
+                            const CategoryLinkRecord &record) -> void {
+    // 1. Serialize
+    msgpack::sbuffer buf;
+    msgpack::pack(buf, record);
+    rocksdb::Slice value{buf.data(), buf.size()};
+    // 2. Add to RocksDB database
+    rocksdb::WriteOptions write_options;
+    const auto status = db_->Put(write_options, category_name, value);
+    CHECK(status.ok()) << "Write of record failed: " << status.ToString();
 }
 
 void CategoryTreeIndex::import_categorylinks_row(const CategoryLinksRow &row) {
@@ -118,97 +115,69 @@ void CategoryTreeIndex::import_categorylinks_row(const CategoryLinksRow &row) {
 void CategoryTreeIndex::add_subcategory(
     const std::string_view category_name,
     const std::string_view subcategory_name) {
-    auto subcats = lookup_subcats(category_name);
-    subcats.push_back(std::string{subcategory_name});
-    set_subcategories(category_name, subcats);
+    auto record = get(category_name);
+    if (!record)
+        record.emplace();
+    record->subcategories_mut().emplace_back(subcategory_name);
+    set(category_name, record.value());
 }
 
 void CategoryTreeIndex::add_page(const std::string_view category_name,
                                  const std::uint64_t page_id) {
-    auto pages = lookup_pages(category_name);
-    pages.push_back(page_id);
-    set_category_members(category_name, pages);
+    auto record = get(category_name);
+    if (!record)
+        record.emplace();
+    record->pages_mut().push_back(page_id);
+    set(category_name, record.value());
 }
 
 auto CategoryTreeIndex::lookup_pages(std::string_view category_name)
     -> std::vector<std::uint64_t> {
-    rocksdb::PinnableSlice value;
-    const auto status =
-        db_->Get(rocksdb::ReadOptions(), pages_cf_, category_name, &value);
-    if (!status.ok()) {
-        if (!status.IsNotFound())
-            LOG(WARNING) << "failed to lookup pages for category_name: "
-                         << category_name << " status: " << status.ToString();
+    auto record = get(category_name);
+    if (record)
+        return record->pages();
+    else
         return {};
-    }
-    return deserialize_pages(value);
 }
 
 auto CategoryTreeIndex::lookup_subcats(std::string_view category_name)
     -> std::vector<std::string> {
-    rocksdb::PinnableSlice value;
-    rocksdb::ReadOptions read_options;
-    const auto status =
-        db_->Get(read_options, subcategories_cf_, category_name, &value);
-    if (!status.ok()) {
-        if (!status.IsNotFound())
-            LOG(WARNING) << "failed to lookup subcategories for category_name: "
-                         << category_name << " status: " << status.ToString();
+    auto record = get(category_name);
+    if (record)
+        return record->subcategories();
+    else
         return {};
-    }
-    return deserialize_subcats(value);
-}
-auto CategoryTreeIndex::lookup_weight(std::string_view category_name)
-    -> std::optional<std::uint64_t> {
-    rocksdb::PinnableSlice value;
-    rocksdb::ReadOptions read_options;
-    const auto status =
-        db_->Get(read_options, weight_cf_, category_name, &value);
-    if (!status.ok()) {
-        if (!status.IsNotFound())
-            LOG(WARNING) << "failed to lookup weight for category_name: "
-                         << category_name << " status: " << status.ToString();
-        return std::nullopt;
-    }
-    return deserialize_weight(value);
 }
 
-void CategoryTreeIndex::set_category_members(
-    const std::string_view category_name,
-    const std::vector<std::uint64_t> &page_ids) {
-    serialize_pages(sbuf_, page_ids);
-    rocksdb::Slice value{sbuf_.data(), sbuf_.size()};
-    const auto status =
-        db_->Put(rocksdb::WriteOptions(), pages_cf_, category_name, value);
-    CHECK(status.ok()) << status.ToString();
+auto CategoryTreeIndex::lookup_weight(std::string_view category_name)
+    -> std::optional<std::uint64_t> {
+    auto record = get(category_name);
+    if (record)
+        return record->weight();
+    else
+        return std::nullopt;
 }
 
 void CategoryTreeIndex::set_weight(const std::string_view category_name,
                                    const std::uint64_t weight) {
-    const auto weight_le = serialize_weight(weight);
-    rocksdb::Slice value{reinterpret_cast<const char *>(weight_le.data()),
-                         weight_le.size()};
-    rocksdb::WriteOptions write_options;
-    const auto status =
-        db_->Put(write_options, weight_cf_, category_name, value);
-    CHECK(status.ok()) << status.ToString();
-}
-
-void CategoryTreeIndex::set_subcategories(
-    const std::string_view category_name,
-    const std::vector<std::string> &subcategories) {
-    serialize_subcats(sbuf_, subcategories);
-    rocksdb::Slice value{sbuf_.data(), sbuf_.size()};
-    const auto status = db_->Put(rocksdb::WriteOptions(), subcategories_cf_,
-                                 category_name, value);
-    CHECK(status.ok()) << status.ToString();
+    auto record = get(category_name);
+    if (record) {
+        record->weight(weight);
+        set(category_name, record.value());
+    } else {
+        LOG(WARNING) << "category_name: " << category_name
+                     << " not found in `categorylinks` column family";
+        CategoryLinkRecord new_record{};
+        new_record.weight(weight);
+        set(category_name, new_record);
+    }
 }
 
 auto CategoryTreeIndex::pick(std::string_view category_name,
                              absl::BitGenRef random_generator)
     -> std::optional<std::uint64_t> {
     const auto weight = lookup_weight(category_name);
-    if (!weight.has_value()) {
+    if (!weight) {
         return std::nullopt;
     }
     const auto picked =
@@ -218,17 +187,20 @@ auto CategoryTreeIndex::pick(std::string_view category_name,
 
 auto CategoryTreeIndex::at_index(std::string_view category_name,
                                  std::uint64_t index) -> std::uint64_t {
-    const auto pages = lookup_pages(category_name);
+    auto record = get(category_name);
+    if (!record)
+        LOG(WARNING) << "category_name: " << category_name
+                     << " not found in `categorylinks` column family";
+    const auto &pages = record->pages();
     if (index < pages.size()) {
         return pages[index];
     }
     index -= pages.size();
-    const auto subcats = lookup_subcats(category_name);
-    for (const auto &subcat : subcats) {
+    for (const auto &subcat : record->subcategories()) {
         const auto weight = lookup_weight(subcat);
         if (!weight.has_value()) {
             LOG(WARNING) << "category_name: " << subcat
-                         << " not found in `weight` column family";
+                         << " not found in `categorylinks` column family";
             continue;
         }
         if (index < weight.value()) {
@@ -245,26 +217,70 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
 // recursive sum of all the pages under a category.
 void CategoryTreeIndex::build_weights() {
     rocksdb::ReadOptions read_options;
-    read_options.pin_data = true;
-    rocksdb::Iterator *it = db_->NewIterator(read_options, pages_cf_);
+    read_options.adaptive_readahead = true;
+    read_options.total_order_seek = true; // ignore prefix Bloom filter in read
+    rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string_view category_name{it->key().data(), it->key().size()};
         const std::uint64_t weight = compute_weight(category_name);
         set_weight(category_name, weight);
     }
+    CHECK(it->status().ok()) << it->status().ToString();
 }
 
-auto CategoryTreeIndex::compute_weight(std::string_view category_name)
-    -> std::uint64_t {
-    std::uint64_t weight = 0;
-    const auto pages_in_category = lookup_pages(category_name);
-    weight += pages_in_category.size();
-    const auto subcats = lookup_subcats(category_name);
-    for (const auto &subcat : subcats) {
-        const auto subcat_weight = compute_weight(subcat);
-        weight += subcat_weight;
+auto CategoryTreeIndex::compute_weight(std::string_view category_name,
+                                       float32_t max_depth) -> std::uint64_t {
+    uint64_t weight = 0;
+    if (!get(category_name)) {
+        LOG(WARNING) << "category name: " << std::quoted(category_name)
+                     << "not found in `categorylinks` column family";
+        return weight;
+    }
+    std::vector<std::string> categories_visited;
+    std::queue<std::string> categories_to_visit;
+    categories_to_visit.emplace(category_name);
+    float32_t depth = 0.;
+    while (!categories_to_visit.empty() && depth <= max_depth) {
+        const auto top = categories_to_visit.front();
+        categories_to_visit.pop();
+        if (std::ranges::find(categories_visited, top) !=
+            categories_visited.end())
+            continue; // this prevents a cycle
+        categories_visited.push_back(top);
+        // add number of pages in this category to "weight"
+        weight += lookup_pages(top).size();
+        // enqueue the subcategories of this category
+        for (const auto &subcat : lookup_subcats(top))
+            categories_to_visit.push(subcat);
+        // increment depth
+        depth += 1.0f;
     }
     return weight;
+}
+
+auto CategoryTreeIndex::run_second_pass() -> void {
+    build_weights();
+    // make sure compression is complete
+    rocksdb::FlushOptions flush_options;
+    flush_options.wait = true;
+    db_->Flush(flush_options);
+}
+
+auto CategoryTreeIndex::search_categories(std::string_view category_name_prefix)
+    -> std::vector<std::string> {
+    std::vector<std::string> autocompletions{};
+    static constexpr size_t MAX_CATEGORY_NAME_PREFIX_LEN = 1'000;
+    if (category_name_prefix.length() > MAX_CATEGORY_NAME_PREFIX_LEN)
+        return autocompletions;
+    rocksdb::ReadOptions read_options;
+    read_options.auto_prefix_mode = true;
+    rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
+    for (it->Seek(category_name_prefix);
+         it->Valid() && it->key().starts_with(category_name_prefix);
+         it->Next()) {
+        autocompletions.emplace_back(it->value().data(), it->value().size());
+    }
+    return autocompletions;
 }
 
 } // namespace net_zelcon::wikidice

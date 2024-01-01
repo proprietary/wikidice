@@ -2,6 +2,7 @@
 #include "bounded_string_ring.h"
 #include <absl/log/log.h>
 #include <array>
+#include <cctype>
 #include <boost/algorithm/algorithm.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/classification.hpp>
@@ -10,7 +11,6 @@
 #include <fmt/ranges.h>
 #include <iostream>
 #include <istream>
-#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -20,6 +20,8 @@
 namespace net_zelcon::wikidice {
 
 using std::literals::string_view_literals::operator""sv;
+
+namespace {
 
 void advance_to(std::istream &stream, std::string_view target) {
     const auto len = target.size();
@@ -33,90 +35,92 @@ void advance_to(std::istream &stream, std::string_view target) {
     }
 }
 
-template <std::size_t N>
-auto read_until(std::istream &stream,
-                const std::array<std::string_view, N> &terminators)
-    -> std::tuple<std::string, std::size_t> {
-    std::string result;
-    char c = stream.get();
-    while (stream.good()) {
-        result.push_back(c);
-        for (std::size_t i = 0; i < terminators.size(); ++i) {
-            const auto &target = terminators[i];
-            const auto len = target.length();
-            if (result.length() >= len &&
-                std::equal(result.begin() + result.size() - len, result.end(),
-                           target.begin())) {
-                result.erase(result.length() - len, len);
-                return {result, i};
-            }
-        }
-        c = stream.get();
-    }
-    LOG(FATAL) << "unexpected end of file";
-}
-
-auto split_row(std::string_view src) -> std::vector<std::string> {
+auto read_values_list(std::istream& stream) -> std::vector<std::string> {
     std::vector<std::string> dst;
-    size_t i = 0;
-    auto read_number = [&src, &i]() -> std::string {
+    const auto expect_number = [&stream]() -> std::string {
         std::string result;
-        while (i < src.length()) {
-            if (src[i] == '\n') {
-                ++i;
+        char c = std::char_traits<char>::eof();
+        while (stream.good() && (c = stream.get()) != std::char_traits<char>::eof()) {
+            if (c == '\n') {
                 continue;
-            } else if (src[i] >= '0' && src[i] <= '9') {
-                result.push_back(src[i]);
-                ++i;
+            } else if (c >= '0' && c <= '9') {
+                result.push_back(c);
             } else {
                 break;
             }
         }
         return result;
     };
-    auto read_string = [&src, &i]() -> std::string {
+    const auto expect_string = [&stream]() -> std::string {
         std::string result;
-        while (i < src.length()) {
-            if (src[i] == '\'') {
-                if (i > 0 && src[i - 1] == '\\' &&
-                    (i < 2 || src[i - 2] != '\\')) {
-                    result.back() = '\'';
-                    i++;
-                    continue;
-                }
+        char c = std::char_traits<char>::eof();
+        while (stream.good()) {
+            c = stream.get();
+            if (!std::isprint(c))
+                continue;
+            if (c == '\\') {
+                result.push_back(stream.get());
+                continue;
+            }
+            if (c == '\'') {
                 break;
             }
-            result.push_back(src[i]);
-            ++i;
+            result.push_back(c);
         }
         return result;
     };
-    auto read_comma = [&src, &i]() {
-        while (i < src.length() && src[i] != ',') {
-            ++i;
+    const auto advance_to_character = [&stream](const char target) {
+        char c = std::char_traits<char>::eof();
+        while (stream.good() && c != target) {
+            c = stream.get();
         }
-        ++i;
     };
-    while (i < src.length()) {
-        if (src[i] == '\'') {
-            ++i;
-            dst.push_back(read_string());
-            read_comma();
-        } else if (src[i] >= '0' && src[i] <= '9') {
-            dst.push_back(read_number());
-            read_comma();
+    advance_to_character('(');
+    while (stream.good()) {
+        const char c = stream.peek();
+        if (c == ')') {
+            stream.get();
+            break;
+        } else if (c == ',' || c == '\n') {
+            stream.get();
+            continue;
+        } else if (c == '\'') {
+            stream.get();
+            auto s = expect_string();
+            dst.push_back(s);
+            // stream.unget();
+            // const char c = stream.get();
+            // CHECK_EQ('\'', c) << "expected closing quote after reading: " << std::quoted(s);
+        } else if (c >= '0' && c <= '9') {
+            dst.emplace_back(expect_number());
         } else {
-            ++i;
+            break;
         }
     }
     return dst;
 }
 
+void unescape(std::string&) {
+    // TODO
+}
+
+void remove_newlines(std::string& s) {
+    const auto new_end = std::remove(s.begin(), s.end(), '\n');
+    s.erase(new_end, s.end());
+}
+
+void sanitize(std::string& s) {
+    remove_newlines(s);
+    unescape(s);
+}
+
+} // namespace
+
 SQLParser::SQLParser(std::istream &stream, std::string_view table_name)
     : stream_(stream), table_name_{table_name} {
     // advance stream to the "insert into..." statement
     const auto insert_into_statement =
-        fmt::format("INSERT INTO `{}` VALUES (", table_name_);
+        fmt::format("INSERT INTO `{}` VALUES ", table_name_);
     advance_to(stream_, insert_into_statement);
 }
 
@@ -125,28 +129,12 @@ auto SQLParser::next() -> std::optional<std::vector<std::string>> {
         DLOG(WARNING) << "called next() on a bad stream";
         return std::nullopt;
     }
-    constexpr std::array terminators = {"),("sv, ");\n"sv};
-    auto [row_str, which_terminator] = read_until(stream_, terminators);
-    if (row_str.empty()) {
-        DLOG(WARNING) << "unexpected end of file";
+    std::vector<std::string> cols = read_values_list(stream_);
+    if (cols.empty()) {
         return std::nullopt;
     }
-    if (which_terminator == 1) {
-        // advance to the next insert statement
-        const auto insert_into_statement =
-            fmt::format("INSERT INTO `{}` VALUES (", table_name_);
-        advance_to(stream_, insert_into_statement);
-    }
-    std::vector<std::string> cols = split_row(row_str);
     for (auto &col : cols) {
-        if (col.front() == '\'') {
-            col.erase(0, 1);
-        }
-        if (col.back() == '\'') {
-            col.erase(col.size() - 1, 1);
-        }
-        const auto new_end = std::remove(col.begin(), col.end(), '\n');
-        col.erase(new_end, col.end());
+        sanitize(col);
     }
     return cols;
 }
@@ -155,6 +143,16 @@ auto CategoryLinksParser::next() -> std::optional<CategoryLinksRow> {
     auto row = SQLParser::next();
     if (!row.has_value()) {
         return std::nullopt;
+    }
+    if (row->size() != 7) {
+        int i = 0;
+        while (i++ < 300)
+            stream_.unget();
+        i = 0;
+        while (i++ < 1000) {
+            std::cout << static_cast<char>(stream_.get());
+        }
+        std::cout << std::endl;
     }
     CHECK(row->size() == 7) << fmt::format("expected 7 columns, got {} in : {}",
                                            row->size(), row.value());
@@ -170,7 +168,7 @@ auto CategoryParser::next() -> std::optional<CategoryRow> {
     if (!row.has_value()) {
         return std::nullopt;
     }
-    CHECK(row->size() == 5);
+    CHECK(row->size() == 5) << "row has " << row->size() << " elements: " << fmt::format("{}", row.value());
     CategoryRow result;
     result.category_id = std::stoull(row->at(0));
     result.category_name = row->at(1);

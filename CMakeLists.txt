@@ -4,10 +4,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Do not build in-source. Please remove CMakeCache.txt and the CMakeFiles/ directory. Then build out-of-source.")
 endif()
 
-if (CMAKE_BUILD_TYPE MATCHES Debug)
-    set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
-endif()
-
 # Put the project early since modules might need to detect the compiler.
 # More information https://cmake.org/cmake/help/latest/command/project.html
 project(
@@ -79,7 +75,6 @@ add_library(libwikidice STATIC)
 target_sources(
     libwikidice
     PRIVATE
-    src/cross_platform_endian.h
     src/category_link_type.h src/category_link_type.cc
     src/category_table.h src/category_table.cc
     src/sql_parser.h src/sql_parser.cc
@@ -90,7 +85,7 @@ target_sources(
     src/sql_parser.h
     src/category_tree_index.h
 )
-target_compile_features(libwikidice PRIVATE cxx_std_20)
+target_compile_features(libwikidice PRIVATE cxx_std_23)
 target_compile_options(
     libwikidice
     PRIVATE
@@ -106,50 +101,100 @@ target_compile_options(
 target_link_libraries(
     libwikidice
     PUBLIC
-    fmt::fmt sqlite3::sqlite3 spdlog::spdlog_header_only Threads::Threads ${Boost_LIBRARIES}
+    fmt::fmt Threads::Threads ${Boost_LIBRARIES}
     absl::flags absl::flags_usage absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
     absl::log absl::absl_check absl::log_flags absl::log_sink
     rocksdb-compiled
     msgpack-cxx
-    "/usr/local/lib/liblz4.a"
+    libzstd_static
 )
 target_include_directories(
     libwikidice
     PUBLIC
-    ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0
-    ${CMAKE_CURRENT_LIST_DIR}/external/abseil-cpp
+    "${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0"
+    "${CMAKE_CURRENT_LIST_DIR}/external/abseil-cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/external/zstd-1.5.5/lib"
 )
 
-add_executable(WikiDice)
+add_executable(wikidice_builder)
 target_sources(
-    WikiDice
+    wikidice_builder
     PUBLIC
     src/build_category_tree.h
     src/build_category_tree.cc
 )
-target_compile_features(WikiDice PRIVATE cxx_std_20)
+target_compile_features(wikidice_builder PRIVATE cxx_std_23)
 target_compile_options(
-    WikiDice
+    wikidice_builder
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
     #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
 # target_link_options(
-#     WikiDice
+#     wikidice_builder
 #     PRIVATE -fsanitize=undefined,address
 # )
 target_link_libraries(
-    WikiDice
+    wikidice_builder
     PRIVATE
     libwikidice fmt::fmt Threads::Threads ${Boost_LIBRARIES}
 )
-target_include_directories(WikiDice PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
+target_include_directories(wikidice_builder PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
 
-# CMake scripts extensions
-target_enable_lto(WikiDice optimized) #enable lto if available for non-debug configurations
-copy_dlls_for_debug(WikiDice "" "") # Copy dependencies next to the executable (DLLs for example)
+# Enable link-time optimization
+target_enable_lto(wikidice_builder optimized) # Enable link-time optimization if available for non-debug configurations
+copy_dlls_for_debug(wikidice_builder "" "") # Copy dependencies next to the executable (DLLs for example)
+
+
+add_executable(
+    wikidice_query
+)
+target_sources(
+    wikidice_query
+    PUBLIC
+    src/wikidice_query.h src/wikidice_query.cc
+)
+target_compile_features(
+    wikidice_query
+    PRIVATE
+    cxx_std_23
+)
+target_compile_options(
+    wikidice_query
+    PRIVATE
+    -Wno-gcc-compat
+    -Wall -Wextra -pedantic -Werror -g3
+    -fsanitize=undefined,address -fno-omit-frame-pointer
+)
+target_link_options(
+    wikidice_query
+    PRIVATE
+    -fsanitize=undefined,address
+)
+target_link_libraries(
+    wikidice_query
+    PRIVATE
+    libwikidice
+    absl::log absl::absl_check absl::log_flags absl::log_sink
+    absl::flags absl::flags_usage absl::flags_parse
+)
+target_include_directories(
+    wikidice_query
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0"
+)
+
+# Enable link-time optimization
+target_enable_lto(wikidice_query optimized)
+copy_dlls_for_debug(wikidice_query "" "")
+
+
+pybind11_add_module(pywikidice src/pywikidice.cc)
+target_compile_features(pywikidice PRIVATE cxx_std_23)
+target_link_libraries(pywikidice PRIVATE libwikidice)
+
 
 # Setup our project as the startup project for Visual so that people don't need to do it manually
 set_directory_properties(PROPERTIES VS_STARTUP_PROJECT WikiDice)
@@ -163,8 +208,13 @@ include(CTest)
 enable_testing()
 
 add_executable(sql_parser_test src/sql_parser_test.cc)
-target_compile_features(sql_parser_test PRIVATE cxx_std_20)
+target_compile_features(sql_parser_test PRIVATE cxx_std_23)
 target_link_libraries(sql_parser_test PRIVATE gtest_main gmock_main gmock libwikidice)
+
+add_executable(category_tree_index_test src/category_tree_index_test.cc)
+target_compile_features(category_tree_index_test PRIVATE cxx_std_23)
+target_link_libraries(category_tree_index_test PRIVATE gtest_main gmock_main gmock libwikidice)
 
 include(GoogleTest)
 gtest_discover_tests(sql_parser_test)
+gtest_discover_tests(category_tree_index_test)

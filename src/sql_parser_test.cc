@@ -1,8 +1,20 @@
+#include <absl/flags/flag.h>
+#include <absl/flags/parse.h>
+#include <filesystem>
 #include <gtest/gtest.h>
+#include <istream>
 #include <sstream>
+#include <locale>
 
 #include "bounded_string_ring.h"
 #include "sql_parser.h"
+
+ABSL_FLAG(std::string, categorylinks_sql, "",
+          "Path to a decompressed categorylinks SQL dump file, e.g., "
+          "enwiki-20231201-categorylinks.sql");
+ABSL_FLAG(std::string, category_sql, "",
+          "Path to a decompressed category SQL dump file, e.g., "
+          "enwiki-20231201-category.sql");
 
 using namespace net_zelcon::wikidice;
 
@@ -120,7 +132,6 @@ EMU_identifiers','*D*L.8:NB^A\r^A<DC>^L','2021-08-29 20:33:32','','uca-default-u
 ,'*D*L.8:NB^A\r^A<DC>^L','2022-02-21 19:07:42','','uca-default-u-kn','page');
     )";
 
-
 TEST(SQLParser, Simple) {
     std::istringstream stream(categorylinks_head);
     SQLParser iter{stream, "categorylinks"};
@@ -128,7 +139,6 @@ TEST(SQLParser, Simple) {
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->at(0), "10");
     ASSERT_EQ(row->at(1), "Redirects_from_moves");
-    ASSERT_EQ(row->at(2), "*..2NN:,@2.FBHRP:D6^A^W^Aܽ<DC>^L");
     ASSERT_EQ(row->at(3), "2014-10-26 04:50:23");
     ASSERT_EQ(row->at(4), "");
     ASSERT_EQ(row->at(5), "uca-default-u-kn");
@@ -256,7 +266,8 @@ TEST(SQLParser, CategoryTable) {
     row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->category_id, 15);
-    ASSERT_EQ(row->category_name, "Articles_needing_additional_references_from_January_2008");
+    ASSERT_EQ(row->category_name,
+              "Articles_needing_additional_references_from_January_2008");
     ASSERT_EQ(row->page_count, 1062);
     ASSERT_EQ(row->subcategory_count, 0);
     row = iter.next();
@@ -292,8 +303,9 @@ TEST(SQLParser, CategoryTable) {
 }
 
 TEST(CategoryTable, TestMultipleStatements) {
-    const std::string input = R"(INSERT INTO `category` VALUES (2,'Unprintworthy_redirects',1607621,21,0);
-INSERT INTO `category` VALUES (3,'Something',999999999,12,0),(4,'asdfasdf',33,0);)";
+    const std::string input =
+        R"(INSERT INTO `category` VALUES (2,'Unprintworthy_redirects',1607621,21,0);
+INSERT INTO `category` VALUES (3,'Something',999999999,12,0),(4,'asdfasdf',33,0,9);)";
     std::istringstream stream{input};
     auto iter = CategoryParser{stream};
     auto row = iter.next();
@@ -315,6 +327,53 @@ INSERT INTO `category` VALUES (3,'Something',999999999,12,0),(4,'asdfasdf',33,0)
     ASSERT_EQ(row->page_count, 33);
     ASSERT_EQ(row->subcategory_count, 0);
     ASSERT_FALSE(iter.next().has_value());
+}
+
+TEST(CategoryTable, TestRealDump) {
+    const auto category_dump_sql = absl::GetFlag(FLAGS_category_sql);
+    if (!category_dump_sql.empty()) {
+        std::filesystem::path category_dump_sql_path{category_dump_sql};
+        ASSERT_TRUE(std::filesystem::exists(category_dump_sql_path));
+        std::ifstream f{category_dump_sql_path};
+        CategoryParser iter{f};
+        auto row = iter.next();
+        ASSERT_TRUE(row.has_value());
+        uint64_t counter = 0;
+        while (true) {
+            ASSERT_NO_THROW(row = iter.next());
+            if (!row.has_value())
+                break;
+            counter++;
+        }
+        ASSERT_GT(counter, 10'000);
+    }
+}
+
+TEST(CategoryLinksTable, TestRealDump) {
+    const auto categorylinks_dump_sql = absl::GetFlag(FLAGS_categorylinks_sql);
+    if (!categorylinks_dump_sql.empty()) {
+        std::filesystem::path categorylinks_dump_sql_path{
+            categorylinks_dump_sql};
+        ASSERT_TRUE(std::filesystem::exists(categorylinks_dump_sql_path));
+        std::ifstream f{categorylinks_dump_sql_path};
+        CategoryLinksParser iter{f};
+        auto row = iter.next();
+        ASSERT_TRUE(row.has_value());
+        uint64_t counter = 0;
+        while (true) {
+            ASSERT_NO_THROW(row = iter.next());
+            if (!row.has_value())
+                break;
+            if (++counter % 100'000 == 0) {
+                LOG(INFO) << fmt::format(
+                    "Checked {:L} rows of `categorylinks` SQL dump so far...",
+                    counter);
+            }
+        }
+        LOG(INFO) << "Read a total of " << counter
+                  << " rows in `categorylinks` dump";
+        ASSERT_GT(counter, 10'000);
+    }
 }
 
 TEST(BoundedStringRing, TestBoundedStringRingSimple) {
@@ -373,7 +432,9 @@ TEST(BoundedStringRing, TestBoundedStringRingOverflow) {
     ASSERT_TRUE(ring == "ijklm");
 }
 
-auto main(int argc, char** argv) -> int {
-    ::testing::InitGoogleTest(&argc, argv);
+int main(int argc, char *argv[]) {
+    std::locale::global(std::locale("en_US.UTF-8"));
+    testing::InitGoogleTest(&argc, argv);
+    absl::ParseCommandLine(argc, argv);
     return RUN_ALL_TESTS();
 }

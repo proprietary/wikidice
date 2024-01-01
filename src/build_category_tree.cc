@@ -1,15 +1,14 @@
-#include <absl/flags/commandlineflag.h>
 #include <absl/flags/flag.h>
-#include <absl/flags/marshalling.h>
 #include <absl/flags/parse.h>
 #include <absl/flags/usage.h>
-#include <absl/flags/usage_config.h>
 #include <absl/log/log.h>
+#include <absl/strings/str_cat.h>
 #include <absl/strings/string_view.h>
 #include <algorithm>
 #include <filesystem>
 #include <fmt/core.h>
 #include <iostream>
+#include <locale>
 #include <memory>
 #include <regex>
 #include <string>
@@ -20,12 +19,10 @@
 #include "category_tree_index.h"
 #include "sql_parser.h"
 
-ABSL_FLAG(std::string, category_dump, "enwiki-20231201-category.sql",
-          "Path to the category SQL dump file");
-ABSL_FLAG(std::string, categorylinks_dump, "enwiki-20231201-categorylinks.sql",
+ABSL_FLAG(std::string, category_dump, "", "Path to the category SQL dump file");
+ABSL_FLAG(std::string, categorylinks_dump, "",
           "Path to the categorylinks SQL dump file");
-ABSL_FLAG(std::string, db_path, "/tmp/wikidice.db",
-          "Path to the database directory");
+ABSL_FLAG(std::string, db_path, "", "Path to the database directory");
 ABSL_FLAG(std::string, wikipedia_language_code, "en",
           "Wikipedia language code (e.g., \"en\", \"de\")");
 
@@ -41,7 +38,7 @@ auto read_category_table(const std::filesystem::path sqldump)
     CategoryParser category_parser(infile);
     while (auto row = category_parser.next()) {
         category_table->add_category(row.value());
-        if (++counter % 10'000 == 0) {
+        if (++counter % 100'000 == 0) {
             LOG(INFO) << fmt::format("Read {} categories...", counter);
             LOG(INFO) << fmt::format("Last category: name={}, id={}",
                                      row.value().category_name,
@@ -58,11 +55,12 @@ auto read_categorylinks_table(CategoryTreeIndex &dst,
     uint64_t counter = 0;
     while (auto row = categorylinks_parser.next()) {
         dst.import_categorylinks_row(row.value());
-        if (++counter % 1'000 == 0)
-            LOG(INFO) << "Imported " << counter << " rows. Last imported row: "
-                      << "page_id=" << row->page_id
-                      << " → category_name=" << row->category_name << " ("
-                      << to_string(row->page_type) << ")";
+        if (++counter % 1'000'000 == 0)
+            LOG(INFO) << fmt::format(
+                "Imported {:L} rows. Last imported row: "
+                "page_id={} (a {}) → category_name={}",
+                counter, row->page_id, to_string(row->page_type),
+                row->category_name);
     }
 }
 
@@ -78,10 +76,13 @@ auto is_valid_language(std::string_view language) -> bool {
 
 } // namespace net_zelcon::wikidice
 
-auto main(int argc, char **argv) -> int {
+int main(int argc, char *argv[]) {
     using namespace net_zelcon::wikidice;
+    std::locale::global(std::locale("en_US.UTF-8"));
     absl::SetProgramUsageMessage(
-        "Builds a category tree index from a categorylinks SQL dump file.");
+        absl::StrCat("This program builds the initial database from Wikipedia "
+                     "SQL dumps. Sample usage:\n",
+                     argv[0]));
     absl::ParseCommandLine(argc, argv);
     CHECK(is_valid_language(absl::GetFlag(FLAGS_wikipedia_language_code)))
         << "Invalid Wikipedia language code (should be something like \"en\" "
@@ -104,7 +105,7 @@ auto main(int argc, char **argv) -> int {
     LOG(INFO) << "Done reading categorylinks table. Saved to: "
               << db_destination_path.string();
     LOG(INFO) << "Starting to build weights...";
-    category_tree_index.build_weights();
+    category_tree_index.run_second_pass();
     LOG(INFO) << "Done building weights. Saved to: "
               << db_destination_path.string();
     return 0;

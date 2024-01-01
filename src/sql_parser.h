@@ -24,7 +24,7 @@
 namespace net_zelcon::wikidice {
 
 class SQLParser {
-private:
+protected:
   std::istream& stream_;
   std::string table_name_;
 public:
