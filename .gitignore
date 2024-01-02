@@ -4,6 +4,7 @@ enwiki-*.sql.gz
 /mydb.db
 /db
 /_build
+/_build_release
 /build
 /.vscode
 .DS_Store
