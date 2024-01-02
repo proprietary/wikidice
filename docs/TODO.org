@@ -1,6 +1,8 @@
 * Web service
 ** TODO Develop Python web service
+SCHEDULED: <2024-01-06 Sat>
 ** TODO Develop sleek frontend with Next.js
+SCHEDULED: <2024-01-06 Sat>
 * libwikidice
 ** TODO Implement on-the-fly gzip decompression from ~*.sql.gz~ dump files
 * Build system
