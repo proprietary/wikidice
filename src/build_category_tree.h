@@ -1,14 +1,14 @@
 #pragma once
 
-#include <array>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace net_zelcon::wikidice {
 
 using std::string_view_literals::operator""sv;
 
-constexpr std::array WIKIPEDIA_LANGUAGE_CODES{
+std::vector<std::string_view> WIKIPEDIA_LANGUAGE_CODES{
     "en"sv,      "fr"sv,      "de"sv,        "es"sv,       "ja"sv,
     "ru"sv,      "pt"sv,      "zh"sv,        "it"sv,       "fa"sv,
     "pl"sv,      "ar"sv,      "nl"sv,        "uk"sv,       "he"sv,

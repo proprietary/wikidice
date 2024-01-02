@@ -9,6 +9,7 @@ add_subdirectory(googletest-1.14.0)
 
 # Abseil
 set(ABSL_PROPAGATE_CXX_STD ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(abseil-cpp)
 
 # fmt

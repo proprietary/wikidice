@@ -433,7 +433,13 @@ TEST(BoundedStringRing, TestBoundedStringRingOverflow) {
 }
 
 int main(int argc, char *argv[]) {
-    std::locale::global(std::locale("en_US.UTF-8"));
+    try {
+        // necessary for printing thousand separators in numbers
+        std::locale l{"en_US.UTF-8"};
+        std::locale::global(l);
+    } catch (std::runtime_error &e) {
+        LOG(WARNING) << "Failed to set locale to en_US.UTF-8: " << e.what();
+    }
     testing::InitGoogleTest(&argc, argv);
     absl::ParseCommandLine(argc, argv);
     return RUN_ALL_TESTS();

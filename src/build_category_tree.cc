@@ -69,16 +69,22 @@ auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
 namespace net_zelcon::wikidice {
 
 auto is_valid_language(std::string_view language) -> bool {
-    return std::find(std::begin(WIKIPEDIA_LANGUAGE_CODES),
-                     std::end(WIKIPEDIA_LANGUAGE_CODES),
-                     language) != std::end(WIKIPEDIA_LANGUAGE_CODES);
+    return std::ranges::any_of(WIKIPEDIA_LANGUAGE_CODES, [language](auto code) {
+        return code == language;
+    });
 }
 
 } // namespace net_zelcon::wikidice
 
 int main(int argc, char *argv[]) {
     using namespace net_zelcon::wikidice;
-    std::locale::global(std::locale("en_US.UTF-8"));
+    try {
+        // necessary for printing thousand separators in numbers
+        std::locale l{"en_US.UTF-8"};
+        std::locale::global(l);
+    } catch (std::runtime_error &e) {
+        LOG(WARNING) << "Failed to set locale to en_US.UTF-8: " << e.what();
+    }
     absl::SetProgramUsageMessage(
         absl::StrCat("This program builds the initial database from Wikipedia "
                      "SQL dumps. Sample usage:\n",

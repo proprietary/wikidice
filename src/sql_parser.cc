@@ -27,7 +27,8 @@ void advance_to(std::istream &stream, std::string_view target) {
     const auto len = target.size();
     BoundedStringRing ring{len};
     char c;
-    while ((c = stream.get()) != std::char_traits<char>::eof()) {
+    while (stream.good()) {
+        c = stream.get();
         ring.push_back(c);
         if (ring == target) {
             break;
@@ -40,8 +41,8 @@ auto read_values_list(std::istream &stream) -> std::vector<std::string> {
     const auto expect_number = [&stream]() -> std::string {
         std::string result;
         char c = std::char_traits<char>::eof();
-        while (stream.good() &&
-               (c = stream.get()) != std::char_traits<char>::eof()) {
+        while (stream.good()) {
+            c = stream.get();
             if (c == '\n') {
                 continue;
             } else if (c >= '0' && c <= '9') {
@@ -89,10 +90,6 @@ auto read_values_list(std::istream &stream) -> std::vector<std::string> {
             stream.get();
             auto s = expect_string();
             dst.push_back(s);
-            // stream.unget();
-            // const char c = stream.get();
-            // CHECK_EQ('\'', c) << "expected closing quote after reading: " <<
-            // std::quoted(s);
         } else if (c >= '0' && c <= '9') {
             dst.emplace_back(expect_number());
         } else {

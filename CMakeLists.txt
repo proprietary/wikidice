@@ -38,6 +38,7 @@ include(Coverage)
 ###############
 
 find_package(Threads REQUIRED)
+find_package(Python 3.11 COMPONENTS Interpreter Development REQUIRED)
 
 # External dependencies
 add_subdirectory(external)
@@ -98,7 +99,16 @@ target_sources(
     src/category_tree_index.h
     src/wikidice_query.h
 )
-target_compile_features(libwikidice PRIVATE cxx_std_23)
+target_compile_features(
+    libwikidice
+    PRIVATE
+    cxx_std_23
+)
+# position independent code
+set_target_properties(
+    libwikidice
+    PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
 target_compile_options(
     libwikidice
     PRIVATE

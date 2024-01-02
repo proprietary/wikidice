@@ -134,6 +134,9 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
         const std::filesystem::path db_path,
         std::shared_ptr<CategoryTable> category_table);
 
+    CategoryTreeIndexWriter(CategoryTreeIndexWriter &&) = default;
+    CategoryTreeIndexWriter &operator=(CategoryTreeIndexWriter &&) = default;
+
   protected:
     auto
     category_name_of(uint64_t category_id) -> std::optional<std::string> final;
@@ -186,6 +189,10 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
 
     explicit CategoryTreeIndexReader(const std::filesystem::path db_path)
         : CategoryTreeIndex(db_path) {}
+
+    CategoryTreeIndexReader(CategoryTreeIndexReader &&) = default;
+
+    CategoryTreeIndexReader &operator=(CategoryTreeIndexReader &&) = default;
 };
 
 } // namespace net_zelcon::wikidice
