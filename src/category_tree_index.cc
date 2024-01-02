@@ -103,6 +103,19 @@ auto CategoryTreeIndex::category_name_of(uint64_t category_id)
     return value.ToString();
 }
 
+auto CategoryTreeIndexWriter::category_name_of(uint64_t category_id)
+    -> std::optional<std::string> {
+    const auto category_row = category_table_->find(category_id);
+    if (!category_row) {
+        LOG(ERROR)
+            << "Failed to find category name corresponding to category_id="
+            << category_id
+            << ". This is from an in-memory table derived from the SQL dump.";
+        return std::nullopt;
+    }
+    return category_row->category_name;
+}
+
 auto CategoryTreeIndex::map_categories(absl::Span<const uint64_t> src)
     -> std::vector<std::string> {
     std::vector<std::string> dst;
@@ -135,6 +148,14 @@ auto CategoryTreeIndex::get(std::string_view category_name)
     const auto o = msgpack::unpack(zone, value.data(), value.size());
     CHECK(!o.is_nil());
     return o.as<CategoryLinkRecord>();
+}
+
+CategoryTreeIndexWriter::CategoryTreeIndexWriter(
+    const std::filesystem::path db_path,
+    std::shared_ptr<CategoryTable> category_table)
+    : CategoryTreeIndex(db_path), category_table_{category_table} {
+    category_table_->for_each(
+        [this](const CategoryRow &row) { import_category_row(row); });
 }
 
 auto CategoryTreeIndexWriter::set(std::string_view category_name,
@@ -171,6 +192,19 @@ void CategoryTreeIndexWriter::import_categorylinks_row(
         add_subcategory(row.category_name, category_row->category_name);
         break;
     }
+}
+
+void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
+    // 1. Serialize
+    const auto category_id =
+        primitive_serializer::serialize_u64(row.category_id);
+    rocksdb::Slice key{reinterpret_cast<const char *>(category_id.data()),
+                       category_id.size()};
+    rocksdb::Slice value{row.category_name};
+    // 2. Add to RocksDB database
+    rocksdb::WriteOptions write_options;
+    auto status = db_->Put(write_options, category_id_to_name_cf_, key, value);
+    CHECK(status.ok()) << "Write of category row failed: " << status.ToString();
 }
 
 void CategoryTreeIndexWriter::add_subcategory(

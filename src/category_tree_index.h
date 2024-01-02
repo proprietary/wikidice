@@ -105,7 +105,8 @@ class CategoryTreeIndex {
     auto at_index(std::string_view category_name,
                   std::uint64_t index) -> std::uint64_t;
 
-    auto category_name_of(uint64_t category_id) -> std::optional<std::string>;
+    virtual auto
+    category_name_of(uint64_t category_id) -> std::optional<std::string>;
 
   private:
     /**
@@ -131,8 +132,11 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     explicit CategoryTreeIndexWriter(
         const std::filesystem::path db_path,
-        std::shared_ptr<CategoryTable> category_table)
-        : CategoryTreeIndex(db_path), category_table_{category_table} {}
+        std::shared_ptr<CategoryTable> category_table);
+
+  protected:
+    auto
+    category_name_of(uint64_t category_id) -> std::optional<std::string> final;
 
   private:
     void set(std::string_view category_name, const CategoryLinkRecord &);

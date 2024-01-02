@@ -25,4 +25,11 @@ auto CategoryTable::find(const std::string_view category_name) const
     return it->second;
 }
 
+auto CategoryTable::for_each(
+    std::function<void(const CategoryRow &)> callback) const -> void {
+    for (const auto &[_, category_row] : by_category_id_) {
+        callback(category_row);
+    }
+}
+
 } // namespace net_zelcon::wikidice
