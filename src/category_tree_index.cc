@@ -19,6 +19,7 @@ CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     rocksdb::ColumnFamilyOptions cf_options;
     cf_options.write_buffer_size = 128 * (1 << 20);
+    cf_options.max_write_buffer_number = 3;
     // enable compression
     cf_options.compression = rocksdb::kZSTD;
     cf_options.bottommost_compression = rocksdb::kZSTD;
@@ -42,6 +43,7 @@ CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
     db_options.create_if_missing = true;
     db_options.create_missing_column_families = true;
     db_options.error_if_exists = false;
+    db_options.max_open_files = 1000;
     rocksdb::Status status =
         rocksdb::DB::Open(db_options, db_path.string(), column_families,
                           &column_family_handles_, &db_);
@@ -70,7 +72,8 @@ auto CategoryTreeIndex::get(std::string_view category_name)
                    << " status: " << status.ToString();
     }
     // 2. Deserialize
-    const auto o = msgpack::unpack(zone_, value.data(), value.size());
+    msgpack::zone zone;
+    const auto o = msgpack::unpack(zone, value.data(), value.size());
     CHECK(!o.is_nil());
     return o.as<CategoryLinkRecord>();
 }
@@ -84,7 +87,7 @@ auto CategoryTreeIndexWriter::set(std::string_view category_name,
     rocksdb::Slice key{category_name.data(), category_name.size()};
     // 2. Add to RocksDB database
     rocksdb::WriteOptions write_options;
-    const auto status = db_->Put(write_options, categorylinks_cf_, key, value);
+    auto status = db_->Put(write_options, categorylinks_cf_, key, value);
     CHECK(status.ok()) << "Write of record failed: " << status.ToString();
 }
 
@@ -306,7 +309,8 @@ auto CategoryTreeIndexReader::for_each(
     CategoryLinkRecord record{};
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string_view category_name{it->key().data(), it->key().size()};
-        msgpack::unpack(zone_, it->value().data(), it->value().size())
+        msgpack::zone zone;
+        msgpack::unpack(zone, it->value().data(), it->value().size())
             .convert(record);
         const bool keep_going = consumer(category_name, record);
         if (!keep_going)

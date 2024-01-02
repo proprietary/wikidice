@@ -58,7 +58,6 @@ class CategoryTreeIndex {
     rocksdb::DB *db_;
     std::vector<rocksdb::ColumnFamilyHandle *> column_family_handles_;
     rocksdb::ColumnFamilyHandle *categorylinks_cf_;
-    msgpack::zone zone_;
 
   public:
     explicit CategoryTreeIndex(const std::filesystem::path db_path);
@@ -71,7 +70,6 @@ class CategoryTreeIndex {
     CategoryTreeIndex(const CategoryTreeIndex &other) = delete;
     CategoryTreeIndex &operator=(const CategoryTreeIndex &other) = delete;
     CategoryTreeIndex(CategoryTreeIndex &&other) {
-        zone_ = std::move(other.zone_);
         db_ = other.db_;
         other.db_ = nullptr;
         column_family_handles_ = std::move(other.column_family_handles_);
@@ -79,7 +77,6 @@ class CategoryTreeIndex {
         other.categorylinks_cf_ = nullptr;
     }
     CategoryTreeIndex &operator=(CategoryTreeIndex &&other) {
-        zone_ = std::move(other.zone_);
         db_ = other.db_;
         other.db_ = nullptr;
         column_family_handles_ = std::move(other.column_family_handles_);
