@@ -71,6 +71,17 @@ find_lto(CXX)
 
 # project
 
+add_library(primitive_serializer STATIC)
+target_sources(
+    primitive_serializer
+    PRIVATE src/cross_platform_endian.h src/primitive_serializer.h src/primitive_serializer.cc
+    PUBLIC src/primitive_serializer.h
+)
+target_link_libraries(primitive_serializer PUBLIC absl::span)
+target_compile_features(primitive_serializer PRIVATE cxx_std_23)
+target_compile_options(primitive_serializer PRIVATE -Wall -Wextra -pedantic -Werror)
+target_link_options(primitive_serializer PRIVATE -fuse-ld=lld)
+
 add_library(libwikidice STATIC)
 target_sources(
     libwikidice
@@ -104,12 +115,14 @@ target_link_options(
 target_link_libraries(
     libwikidice
     PUBLIC
+    primitive_serializer
     fmt::fmt Threads::Threads ${Boost_LIBRARIES}
     absl::flags absl::flags_usage absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
     absl::log absl::absl_check absl::log_flags absl::log_sink
     absl::random_random absl::random_bit_gen_ref
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
+    absl::span
     rocksdb-compiled
     msgpack-cxx
     libzstd_static
@@ -180,6 +193,12 @@ target_compile_features(category_tree_index_test PRIVATE cxx_std_23)
 target_compile_options(category_tree_index_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
 target_link_libraries(category_tree_index_test PRIVATE gtest_main gmock_main gmock libwikidice)
 target_link_options(category_tree_index_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
+
+add_executable(primitive_serializer_test src/primitive_serializer_test.cc)
+target_compile_features(primitive_serializer_test PRIVATE cxx_std_23)
+target_compile_options(primitive_serializer_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
+target_link_libraries(primitive_serializer_test PRIVATE primitive_serializer gtest_main gmock_main gmock absl::span)
+target_link_options(primitive_serializer_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
 
 include(GoogleTest)
 gtest_discover_tests(sql_parser_test)

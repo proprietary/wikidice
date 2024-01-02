@@ -3,6 +3,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/random/bit_gen_ref.h>
 #include <absl/random/random.h>
+#include <absl/types/span.h>
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -24,12 +25,12 @@ class CategoryLinkRecord {
   public:
     CategoryLinkRecord() {}
     auto pages() const noexcept -> std::vector<uint64_t> { return pages_; }
-    auto subcategories() const noexcept -> std::vector<std::string> {
+    auto subcategories() const noexcept -> std::vector<uint64_t> {
         return subcategories_;
     }
     auto weight() const noexcept -> uint64_t { return weight_; }
     auto pages_mut() noexcept -> std::vector<uint64_t> & { return pages_; }
-    auto subcategories_mut() noexcept -> std::vector<std::string> & {
+    auto subcategories_mut() noexcept -> std::vector<uint64_t> & {
         return subcategories_;
     }
     auto weight_mut() noexcept -> uint64_t & { return weight_; }
@@ -42,14 +43,14 @@ class CategoryLinkRecord {
     void pages(std::vector<uint64_t> &&pages) noexcept {
         pages_ = std::move(pages);
     }
-    void subcategories(std::vector<std::string> &&subcategories) noexcept {
+    void subcategories(std::vector<uint64_t> &&subcategories) noexcept {
         subcategories_ = std::move(subcategories);
     }
     void weight(const uint64_t weight) noexcept { weight_ = weight; }
 
   private:
     std::vector<uint64_t> pages_;
-    std::vector<std::string> subcategories_;
+    std::vector<uint64_t> subcategories_;
     uint64_t weight_ = 0ULL;
 };
 
@@ -58,6 +59,7 @@ class CategoryTreeIndex {
     rocksdb::DB *db_;
     std::vector<rocksdb::ColumnFamilyHandle *> column_family_handles_;
     rocksdb::ColumnFamilyHandle *categorylinks_cf_;
+    rocksdb::ColumnFamilyHandle *category_id_to_name_cf_;
 
   public:
     explicit CategoryTreeIndex(const std::filesystem::path db_path);
@@ -103,6 +105,17 @@ class CategoryTreeIndex {
     auto at_index(std::string_view category_name,
                   std::uint64_t index) -> std::uint64_t;
 
+    auto category_name_of(uint64_t category_id) -> std::optional<std::string>;
+
+  private:
+    /**
+     * @brief Map a list of category IDs to their names.
+     */
+    auto map_categories(absl::Span<const uint64_t>) -> std::vector<std::string>;
+
+    auto categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions;
+    auto category_id_to_name_cf_options() const -> rocksdb::ColumnFamilyOptions;
+
   private:
     static constexpr size_t PREFIX_CAP_LEN = 8;
     static constexpr size_t BLOOM_FILTER_BITS_PER_KEY = 10;
@@ -111,6 +124,8 @@ class CategoryTreeIndex {
 class CategoryTreeIndexWriter : public CategoryTreeIndex {
   public:
     void import_categorylinks_row(const CategoryLinksRow &);
+
+    void import_category_row(const CategoryRow &);
 
     void run_second_pass();
 
@@ -185,7 +200,7 @@ MSGPACK_API_VERSION_NAMESPACE(MSGPACK_DEFAULT_API_NS) {
             if (o.via.array.size != 3)
                 throw msgpack::type_error();
             v.pages(o.via.array.ptr[0].as<std::vector<uint64_t>>());
-            v.subcategories(o.via.array.ptr[1].as<std::vector<std::string>>());
+            v.subcategories(o.via.array.ptr[1].as<std::vector<uint64_t>>());
             v.weight(o.via.array.ptr[2].as<uint64_t>());
             return o;
         }

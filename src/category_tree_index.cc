@@ -1,4 +1,5 @@
 #include "category_tree_index.h"
+#include "primitive_serializer.h"
 
 #include <absl/log/check.h>
 #include <absl/log/log.h>
@@ -10,13 +11,14 @@
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/slice_transform.h>
 #include <rocksdb/table.h>
+#include <span>
 #include <stdexcept>
 #include <zstd.h>
 
 namespace net_zelcon::wikidice {
 
-CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
-    std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
+auto CategoryTreeIndex::categorylinks_cf_options() const
+    -> rocksdb::ColumnFamilyOptions {
     rocksdb::ColumnFamilyOptions cf_options;
     cf_options.write_buffer_size = 128 * (1 << 20);
     cf_options.max_write_buffer_number = 3;
@@ -34,10 +36,30 @@ CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
         rocksdb::NewBlockBasedTableFactory(table_options));
     cf_options.prefix_extractor.reset(
         rocksdb::NewCappedPrefixTransform(PREFIX_CAP_LEN));
+    return cf_options;
+}
+
+auto CategoryTreeIndex::category_id_to_name_cf_options() const
+    -> rocksdb::ColumnFamilyOptions {
+    rocksdb::ColumnFamilyOptions cf_options;
+    cf_options.write_buffer_size = 64 * (1 << 20);
+    // enable compression
+    cf_options.compression = rocksdb::kZSTD;
+    cf_options.bottommost_compression = rocksdb::kZSTD;
+    cf_options.compression_opts.level = ZSTD_maxCLevel();
+    cf_options.compression_opts.max_dict_bytes = 8192;
+    cf_options.compression_opts.zstd_max_train_bytes = 8192;
+    return cf_options;
+}
+
+CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
+    std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     // setup column families
     column_families.emplace_back(rocksdb::kDefaultColumnFamilyName,
                                  rocksdb::ColumnFamilyOptions{});
-    column_families.emplace_back("categorylinks", cf_options);
+    column_families.emplace_back("categorylinks", categorylinks_cf_options());
+    column_families.emplace_back("category_id_to_name",
+                                 category_id_to_name_cf_options());
     // setup database
     rocksdb::DBOptions db_options;
     db_options.create_if_missing = true;
@@ -51,9 +73,46 @@ CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
         LOG(FATAL) << "Failed to open db at " << db_path.string() << ": "
                    << status.ToString();
     }
-    CHECK(column_family_handles_.size() == 2);
-    CHECK(column_family_handles_[1]->GetName() == "categorylinks");
+    CHECK_EQ(column_family_handles_.size(), 3ULL);
+    CHECK_EQ(column_family_handles_[1]->GetName(), "categorylinks");
     categorylinks_cf_ = column_family_handles_[1];
+    CHECK_EQ(column_family_handles_[2]->GetName(), "category_id_to_name");
+    category_id_to_name_cf_ = column_family_handles_[2];
+}
+
+auto CategoryTreeIndex::category_name_of(uint64_t category_id)
+    -> std::optional<std::string> {
+    auto ser = primitive_serializer::serialize_u64(category_id);
+    rocksdb::Slice key{reinterpret_cast<const char *>(ser.data()), ser.size()};
+    rocksdb::PinnableSlice value;
+    rocksdb::ReadOptions read_options;
+    const auto status =
+        db_->Get(read_options, category_id_to_name_cf_, key, &value);
+    if (!status.ok()) {
+        if (status.IsNotFound()) {
+            LOG(ERROR)
+                << "Failed to find category name corresponding to category_id="
+                << category_id
+                << ". Column family `category_id_to_name` may not have been "
+                   "populated yet, but should already be.";
+            return std::nullopt;
+        }
+        LOG(FATAL) << "Failed to find category name of category_id="
+                   << category_id << ": " << status.ToString();
+    }
+    return value.ToString();
+}
+
+auto CategoryTreeIndex::map_categories(absl::Span<const uint64_t> src)
+    -> std::vector<std::string> {
+    std::vector<std::string> dst;
+    dst.reserve(src.size());
+    for (auto cat_id : src) {
+        auto category_name = category_name_of(cat_id);
+        if (category_name)
+            dst.emplace_back(category_name.value());
+    }
+    return dst;
 }
 
 auto CategoryTreeIndex::get(std::string_view category_name)
@@ -121,8 +180,15 @@ void CategoryTreeIndexWriter::add_subcategory(
     if (!record) {
         record.emplace(CategoryLinkRecord{});
     }
-    record->subcategories_mut().emplace_back(subcategory_name);
-    DCHECK_EQ(record->subcategories().back(), subcategory_name);
+    const auto subcategory_details = category_table_->find(subcategory_name);
+    if (!subcategory_details) {
+        LOG(ERROR) << "In-memory table mapping category names to category IDs "
+                      "is missing: "
+                   << std::quoted(subcategory_name);
+        return;
+    }
+    record->subcategories_mut().emplace_back(subcategory_details->category_id);
+    DCHECK_EQ(record->subcategories().back(), subcategory_details->category_id);
     set(category_name, record.value());
 }
 
@@ -149,7 +215,7 @@ auto CategoryTreeIndex::lookup_subcats(std::string_view category_name)
     -> std::vector<std::string> {
     auto record = get(category_name);
     if (record)
-        return record->subcategories();
+        return map_categories(record->subcategories());
     else
         return {};
 }
@@ -201,7 +267,7 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
         return pages[index];
     }
     index -= pages.size();
-    for (const auto &subcat : record->subcategories()) {
+    for (const auto &subcat : map_categories(record->subcategories())) {
         const auto weight = lookup_weight(subcat);
         if (!weight.has_value()) {
             LOG(WARNING) << "category_name: " << subcat
