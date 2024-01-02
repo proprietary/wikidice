@@ -81,9 +81,10 @@ auto CategoryTreeIndexWriter::set(std::string_view category_name,
     msgpack::sbuffer buf;
     msgpack::pack(buf, record);
     rocksdb::Slice value{buf.data(), buf.size()};
+    rocksdb::Slice key{category_name.data(), category_name.size()};
     // 2. Add to RocksDB database
     rocksdb::WriteOptions write_options;
-    const auto status = db_->Put(write_options, category_name, value);
+    const auto status = db_->Put(write_options, categorylinks_cf_, key, value);
     CHECK(status.ok()) << "Write of record failed: " << status.ToString();
 }
 
@@ -114,9 +115,11 @@ void CategoryTreeIndexWriter::add_subcategory(
     const std::string_view category_name,
     const std::string_view subcategory_name) {
     auto record = get(category_name);
-    if (!record)
-        record.emplace();
+    if (!record) {
+        record.emplace(CategoryLinkRecord{});
+    }
     record->subcategories_mut().emplace_back(subcategory_name);
+    DCHECK_EQ(record->subcategories().back(), subcategory_name);
     set(category_name, record.value());
 }
 
@@ -124,8 +127,9 @@ void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
                                        const std::uint64_t page_id) {
     auto record = get(category_name);
     if (!record)
-        record.emplace();
+        record.emplace(CategoryLinkRecord{});
     record->pages_mut().push_back(page_id);
+    DCHECK_EQ(record->pages().back(), page_id);
     set(category_name, record.value());
 }
 
@@ -257,11 +261,23 @@ auto CategoryTreeIndexWriter::compute_weight(
 }
 
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
+    // build the "weights" (the number of leaf nodes (pages) under a category)
+    LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
+                 "under a category)...";
     build_weights();
-    // make sure compression is complete
+    // flush the write buffer
+    LOG(INFO) << "Flushing RocksDB write buffer...";
     rocksdb::FlushOptions flush_options;
     flush_options.wait = true;
     db_->Flush(flush_options);
+    // perform manual compaction
+    LOG(INFO) << "Performing manual compaction on the RocksDB database...";
+    rocksdb::CompactRangeOptions compact_options;
+    compact_options.change_level = true;
+    compact_options.target_level = 0;
+    compact_options.bottommost_level_compaction =
+        rocksdb::BottommostLevelCompaction::kForce;
+    db_->CompactRange(compact_options, categorylinks_cf_, nullptr, nullptr);
 }
 
 auto CategoryTreeIndexReader::search_categories(
@@ -279,6 +295,23 @@ auto CategoryTreeIndexReader::search_categories(
         autocompletions.emplace_back(it->value().data(), it->value().size());
     }
     return autocompletions;
+}
+
+auto CategoryTreeIndexReader::for_each(
+    std::function<bool(std::string_view, const CategoryLinkRecord &)> consumer)
+    -> void {
+    rocksdb::ReadOptions read_options;
+    read_options.total_order_seek = true;
+    rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
+    CategoryLinkRecord record{};
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        std::string_view category_name{it->key().data(), it->key().size()};
+        msgpack::unpack(zone_, it->value().data(), it->value().size())
+            .convert(record);
+        const bool keep_going = consumer(category_name, record);
+        if (!keep_going)
+            break;
+    }
 }
 
 } // namespace net_zelcon::wikidice

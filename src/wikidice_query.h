@@ -18,7 +18,9 @@ class Session {
         -> std::vector<std::string>;
     auto pick_random_article(std::string_view category_name)
         -> std::pair<uint64_t, bool>;
+    auto take(uint64_t n) -> std::vector<std::string>;
     explicit Session(const std::filesystem::path);
+    explicit Session(std::string_view);
 
   private:
     std::shared_ptr<CategoryTreeIndexReader> index_;

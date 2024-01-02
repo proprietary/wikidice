@@ -93,12 +93,13 @@ target_compile_options(
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
-    -fsanitize=undefined,address -fno-omit-frame-pointer
+    #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_options(
     libwikidice
     PRIVATE
-    -fsanitize=undefined,address -fuse-ld=lld
+    -fuse-ld=lld
+    #-fsanitize=undefined,address
 )
 target_link_libraries(
     libwikidice
@@ -134,11 +135,13 @@ target_compile_options(
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
-    -fsanitize=undefined,address -fno-omit-frame-pointer
+    #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_options(
     wikidice_builder
-    PRIVATE -fsanitize=undefined,address -fuse-ld=lld
+    PRIVATE
+    -fuse-ld=lld
+    #-fsanitize=undefined,address
 )
 target_link_libraries(
     wikidice_builder
@@ -150,6 +153,8 @@ target_include_directories(wikidice_builder PRIVATE ${CMAKE_CURRENT_LIST_DIR}/ex
 # Python module
 pybind11_add_module(pywikidice src/pywikidice.cc)
 target_compile_features(pywikidice PRIVATE cxx_std_23)
+#target_compile_options(pywikidice PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=address,undefined -fno-omit-frame-pointer)
+#target_link_options(pywikidice PRIVATE -fuse-ld=lld -fsanitize=address,undefined)
 target_link_libraries(pywikidice PRIVATE libwikidice)
 
 

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <msgpack.hpp>
@@ -162,6 +163,10 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
 
     auto search_categories(std::string_view category_name_prefix)
         -> std::vector<std::string>;
+
+    auto for_each(
+        std::function<bool(std::string_view, const CategoryLinkRecord &)>)
+        -> void;
 
     explicit CategoryTreeIndexReader(const std::filesystem::path db_path)
         : CategoryTreeIndex(db_path) {}
