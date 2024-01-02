@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: WikiDice
+  description: Wikipedia random article generator by recursive category traversal
+  summary: Wikipedia random article generator by recursive category traversal
+  version: 1.0.0
+  contact:
+    name: Zelly Snyder
+    email: zelcon@zelcon.net
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.txt
+servers:
+  - url: https://wikidice.zelcon.net/api/
+    description: Production server
+  - url: http://127.0.0.1:8080
+    description: Development server
+paths:
+  /random:
+    get:
+      summary: Get a random article
+      description: Get a random article from Wikipedia under a category
+      operationId: getRandomArticle
+      parameters:
+        - name: category
+          in: query
+          description: Category to search under (recursively, including subcategories)
+          required: true
+          allowEmptyValue: false
+          schema:
+            type: string
+        - name: language
+          in: query
+          description: |
+            Wikipedia language name such as "en", "de", etc. For examples, see:
+            https://en.wikipedia.org/wiki/List_of_Wikipedias
+          required: false
+          allowEmptyValue: false
+          schema:
+            type: string
+            default: en
+      responses:
+        '302':
+          description: Found
+          headers:
+            Location:
+              description: Redirect location
+              schema:
+                type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /autocomplete:
+    get:
+      summary: Autocompletion search for category names
+      description: Prefix search for categories
+      operationId: categoryAutocomplete
+      parameters:
+        - name: prefix
+          in: query
+          description: Prefix to search for
+          required: true
+          schema:
+            type: string
+        - name: language
+          in: query
+          description: |
+            Wikipedia language name such as "en", "de", etc. For examples, see:
+            https://en.wikipedia.org/wiki/List_of_Wikipedias
+          required: false
+          allowEmptyValue: false
+          schema:
+            type: string
+            default: en
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        internal_code:
+          type: string
+          description: Internal error code
+          nullable: true
