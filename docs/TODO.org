@@ -1,0 +1,8 @@
+* TODO Develop Python web service
+* TODO Develop sleek frontend with Next.js
+* TODO Implement on-the-fly gzip decompression from ==*.sql.gz== dump files
+* TODO Link ==zstd== from vendored source---without having to install it in the environment
+* TODO Get Nix flake / ==default.nix== / ==nix develop== working
+* TODO Write "how it works" documentation
+* TODO Integration tests
+* TODO Fuzzing with LLVM
