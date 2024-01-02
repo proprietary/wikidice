@@ -5,7 +5,8 @@ SCHEDULED: <2024-01-06 Sat>
 SCHEDULED: <2024-01-06 Sat>
 * libwikidice
 ** TODO Implement on-the-fly gzip decompression from ~*.sql.gz~ dump files
-* Build system
+** TODO Split ~libwikidice~ into logical modules
+* DevOps
 ** TODO Link ~zstd~ from vendored source---without having to install it in the environment
 ** TODO Get Nix flake / ~default.nix~ / ~nix develop~ working
 * Documentation
