@@ -226,7 +226,8 @@ void CategoryTreeIndexWriter::add_subcategory(
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
-    auto status = db_->Merge(rocksdb::WriteOptions{}, categorylinks_cf_,
+    rocksdb::WriteOptions write_options;
+    auto status = db_->Merge(write_options, categorylinks_cf_,
                              category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
@@ -238,7 +239,8 @@ void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
-    auto status = db_->Merge(rocksdb::WriteOptions{}, categorylinks_cf_,
+    rocksdb::WriteOptions write_options;
+    auto status = db_->Merge(write_options, categorylinks_cf_,
                              category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
@@ -431,20 +433,21 @@ bool CategoryLinkRecordMergeOperator::Merge(
     rocksdb::Logger *) const {
     if (existing_value) {
         CategoryLinkRecord existing_record;
-        msgpack::object_handle oh =
-            msgpack::unpack(existing_value->data(), existing_value->size());
-        oh.get().convert(existing_record);
+        {
+            msgpack::zone zone;
+            msgpack::unpack(zone, existing_value->data(), existing_value->size()).convert(existing_record);
+        }
         CategoryLinkRecord new_record;
-        msgpack::object_handle oh2 =
-            msgpack::unpack(value.data(), value.size());
-        oh2.get().convert(new_record);
-        new_record.pages_mut().insert(new_record.pages_mut().end(),
-                                      existing_record.pages().begin(),
-                                      existing_record.pages().end());
-        new_record.subcategories_mut().insert(
-            new_record.subcategories_mut().end(),
-            existing_record.subcategories().begin(),
-            existing_record.subcategories().end());
+        {
+            msgpack::zone zone;
+            msgpack::unpack(zone, value.data(), value.size()).convert(new_record);
+        }
+        if (!existing_record.pages().empty())
+            for (const auto page : existing_record.pages())
+                new_record.pages_mut().push_back(page);
+        if (!existing_record.subcategories().empty())
+            for (const auto subcat : existing_record.subcategories())
+                new_record.subcategories_mut().push_back(subcat);
         new_record.weight_mut() += existing_record.weight();
         msgpack::sbuffer sbuf;
         msgpack::pack(sbuf, new_record);
