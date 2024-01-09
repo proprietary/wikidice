@@ -116,15 +116,16 @@ void sanitize(std::string &s) {
 } // namespace
 
 SQLParser::SQLParser(std::istream &stream, std::string_view table_name)
-    : stream_(stream), table_name_{table_name} {
-    // advance stream to the "insert into..." statement
+    : stream_(stream), table_name_{table_name} {}
+
+void SQLParser::skip_header() {
     const auto insert_into_statement =
         fmt::format("INSERT INTO `{}` VALUES ", table_name_);
     advance_to(stream_, insert_into_statement);
 }
 
 auto SQLParser::next() -> std::optional<std::vector<std::string>> {
-    if (!stream_.good()) {
+    if (!stream_.good() || (stop_at_ && stream_.tellg() >= stop_at_.value())) {
         DLOG(WARNING) << "called next() on a bad stream";
         return std::nullopt;
     }
@@ -188,6 +189,46 @@ auto read_category_table(std::istream &stream)
         }
         result[row->category_id] = *row;
     }
+    return result;
+}
+
+auto split_sqldump(const std::filesystem::path &sqldump,
+                   std::string_view table_name, uint32_t n_partitions)
+    -> std::vector<std::unique_ptr<FilePortionStream>> {
+    CHECK(std::filesystem::is_regular_file(sqldump));
+    auto parts = SQLParser::split_offsets(sqldump, table_name, n_partitions);
+    std::vector<std::unique_ptr<FilePortionStream>> dst;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        dst.emplace_back(std::make_unique<FilePortionStream>(
+            sqldump, std::get<0>(parts[i]), std::get<1>(parts[i])));
+    }
+    return dst;
+}
+
+auto SQLParser::split_offsets(const std::filesystem::path &sqldump,
+                              std::string_view table_name, size_t n_partitions)
+    -> std::vector<std::tuple<std::streamoff, std::streamoff>> {
+    CHECK_GT(n_partitions, 0ULL);
+    CHECK(std::filesystem::is_regular_file(sqldump));
+    std::vector<std::tuple<std::streamoff, std::streamoff>> result;
+    std::ifstream stream{sqldump, std::ios::in};
+    SQLParser parser{stream, table_name};
+    parser.skip_header();
+    std::streamoff begin_pos = stream.tellg();
+    const auto filesize = std::filesystem::file_size(sqldump);
+    const auto partition_size =
+        filesize / static_cast<std::uintmax_t>(n_partitions);
+    std::streamoff nth_partition = 1;
+    while (parser.next()) {
+        std::streamoff current_pos = stream.tellg();
+        if (static_cast<uintmax_t>(current_pos) >=
+            (partition_size * nth_partition)) {
+            result.emplace_back(begin_pos, current_pos);
+            begin_pos = current_pos;
+            nth_partition++;
+        }
+    }
+    result.emplace_back(begin_pos, filesize);
     return result;
 }
 

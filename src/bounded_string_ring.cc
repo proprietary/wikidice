@@ -1,47 +1,54 @@
 #include "bounded_string_ring.h"
+#include <cstdlib>
 
 namespace net_zelcon::wikidice {
 
-BoundedStringRing::BoundedStringRing(std::size_t size) : size_{size} {
-    if (size == 0) {
-        throw std::invalid_argument("size must be greater than 0");
+BoundedStringRing::BoundedStringRing(std::size_t size) : size_{size}, data_{new char[size]}, pos_{0ULL} {
+    if (size <= 1) {
+        delete[] data_;
+        throw std::invalid_argument("size must be greater than 1; otherwise just use a char");
     }
-    iterator = new Node{'\0', nullptr};
-    Node *prev = iterator;
-    for (std::size_t i = 1; i < size; ++i) {
-        Node *node = new Node{'\0', nullptr};
-        prev->next = node;
-        prev = node;
-    }
-    prev->next = iterator;
+    std::memset(data_, '\0', size);
 }
 
 BoundedStringRing::~BoundedStringRing() noexcept {
-    for (Node *n = iterator->next; n != iterator;) {
-        Node *t = n;
-        n = n->next;
-        delete t;
-    }
-    delete iterator;
+    delete[] data_;
 }
 
 void BoundedStringRing::push_back(char c) noexcept {
-    iterator->c = c;
-    iterator = iterator->next;
+    pos_ %= size_;
+    data_[pos_] = c;
+    pos_++;
+}
+
+void BoundedStringRing::clear() noexcept {
+    std::memset(data_, '\0', size_);
 }
 
 bool BoundedStringRing::operator==(std::string_view other) const noexcept {
-    if (other.length() != size_) {
+    if (other.size() != size_) {
         return false;
     }
-    Node *cur = iterator;
-    for (std::size_t i = 0; cur != nullptr && i < other.size(); ++i) {
-        if (other[i] != cur->c) {
+    for (size_t i = 0; i < other.length(); ++i) {
+        size_t this_index = (pos_ + i) % size_;
+        if (data_[this_index] != other[i]) {
             return false;
         }
-        cur = cur->next;
     }
     return true;
+}
+
+auto BoundedStringRing::string() const noexcept -> std::string {
+    std::string output;
+    output.reserve(size_);
+    for (size_t i = 0; i < size_; ++i) {
+        output.push_back(data_[(pos_ + i) % size_]);
+    }
+    return output;
+}
+
+auto BoundedStringRing::operator[](std::size_t i) const noexcept -> char {
+    return data_[i % size_];
 }
 
 } // namespace net_zelcon::wikidice

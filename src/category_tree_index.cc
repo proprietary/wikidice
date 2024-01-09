@@ -20,6 +20,9 @@ namespace net_zelcon::wikidice {
 auto CategoryTreeIndex::categorylinks_cf_options() const
     -> rocksdb::ColumnFamilyOptions {
     rocksdb::ColumnFamilyOptions cf_options;
+    // add merge operator to merge CategoryLinkRecords
+    cf_options.merge_operator.reset(new CategoryLinkRecordMergeOperator);
+    // set write buffer size
     cf_options.write_buffer_size = 128 * (1 << 20);
     cf_options.max_write_buffer_number = 3;
     // enable compression
@@ -210,10 +213,7 @@ void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
 void CategoryTreeIndexWriter::add_subcategory(
     const std::string_view category_name,
     const std::string_view subcategory_name) {
-    auto record = get(category_name);
-    if (!record) {
-        record.emplace(CategoryLinkRecord{});
-    }
+    CategoryLinkRecord new_record{};
     const auto subcategory_details = category_table_->find(subcategory_name);
     if (!subcategory_details) {
         LOG(ERROR) << "In-memory table mapping category names to category IDs "
@@ -221,19 +221,26 @@ void CategoryTreeIndexWriter::add_subcategory(
                    << std::quoted(subcategory_name);
         return;
     }
-    record->subcategories_mut().emplace_back(subcategory_details->category_id);
-    DCHECK_EQ(record->subcategories().back(), subcategory_details->category_id);
-    set(category_name, record.value());
+    new_record.subcategories_mut().emplace_back(
+        subcategory_details->category_id);
+    msgpack::sbuffer buf;
+    msgpack::pack(buf, new_record);
+    rocksdb::Slice value{buf.data(), buf.size()};
+    auto status = db_->Merge(rocksdb::WriteOptions{}, categorylinks_cf_,
+                             category_name, value);
+    CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
 void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
                                        const std::uint64_t page_id) {
-    auto record = get(category_name);
-    if (!record)
-        record.emplace(CategoryLinkRecord{});
-    record->pages_mut().push_back(page_id);
-    DCHECK_EQ(record->pages().back(), page_id);
-    set(category_name, record.value());
+    CategoryLinkRecord new_record{};
+    new_record.pages_mut().push_back(page_id);
+    msgpack::sbuffer buf;
+    msgpack::pack(buf, new_record);
+    rocksdb::Slice value{buf.data(), buf.size()};
+    auto status = db_->Merge(rocksdb::WriteOptions{}, categorylinks_cf_,
+                             category_name, value);
+    CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
 auto CategoryTreeIndex::lookup_pages(std::string_view category_name)
@@ -416,6 +423,36 @@ auto CategoryTreeIndexReader::for_each(
         if (!keep_going)
             break;
     }
+}
+
+bool CategoryLinkRecordMergeOperator::Merge(
+    const rocksdb::Slice &, const rocksdb::Slice *existing_value,
+    const rocksdb::Slice &value, std::string *new_value,
+    rocksdb::Logger *) const {
+    if (existing_value) {
+        CategoryLinkRecord existing_record;
+        msgpack::object_handle oh =
+            msgpack::unpack(existing_value->data(), existing_value->size());
+        oh.get().convert(existing_record);
+        CategoryLinkRecord new_record;
+        msgpack::object_handle oh2 =
+            msgpack::unpack(value.data(), value.size());
+        oh2.get().convert(new_record);
+        new_record.pages_mut().insert(new_record.pages_mut().end(),
+                                      existing_record.pages().begin(),
+                                      existing_record.pages().end());
+        new_record.subcategories_mut().insert(
+            new_record.subcategories_mut().end(),
+            existing_record.subcategories().begin(),
+            existing_record.subcategories().end());
+        new_record.weight_mut() += existing_record.weight();
+        msgpack::sbuffer sbuf;
+        msgpack::pack(sbuf, new_record);
+        new_value->assign(sbuf.data(), sbuf.size());
+    } else {
+        new_value->assign(value.data(), value.size());
+    }
+    return true;
 }
 
 } // namespace net_zelcon::wikidice

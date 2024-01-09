@@ -12,11 +12,13 @@
 #include <memory>
 #include <regex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "build_category_tree.h"
 #include "category_table.h"
 #include "category_tree_index.h"
+#include "cross_platform_set_thread_name.h"
 #include "sql_parser.h"
 
 ABSL_FLAG(std::string, category_dump, "", "Path to the category SQL dump file");
@@ -25,6 +27,7 @@ ABSL_FLAG(std::string, categorylinks_dump, "",
 ABSL_FLAG(std::string, db_path, "", "Path to the database directory");
 ABSL_FLAG(std::string, wikipedia_language_code, "en",
           "Wikipedia language code (e.g., \"en\", \"de\")");
+ABSL_FLAG(uint32_t, threads, 8, "Number of threads to use");
 
 namespace {
 
@@ -36,6 +39,7 @@ auto read_category_table(const std::filesystem::path sqldump)
     uint64_t counter = 0;
     std::ifstream infile(sqldump);
     CategoryParser category_parser(infile);
+    category_parser.skip_header();
     while (auto row = category_parser.next()) {
         category_table->add_category(row.value());
         if (++counter % 100'000 == 0) {
@@ -49,18 +53,42 @@ auto read_category_table(const std::filesystem::path sqldump)
 }
 
 auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
-                              const std::filesystem::path sqldump) -> void {
-    std::ifstream infile{sqldump};
-    CategoryLinksParser categorylinks_parser{infile};
+                              std::istream &table_stream, std::streamoff offset,
+                              bool skip_header = false) -> void {
+    CategoryLinksParser categorylinks_parser{table_stream};
+    categorylinks_parser.with_stop_at(offset);
+    if (skip_header)
+        categorylinks_parser.skip_header();
     uint64_t counter = 0;
     while (auto row = categorylinks_parser.next()) {
         dst.import_categorylinks_row(row.value());
         if (++counter % 1'000'000 == 0)
-            LOG(INFO) << fmt::format("Imported {:L} rows. Last imported row: "
-                                     "page_id={} (a {}) → category_name={}",
-                                     counter, row->page_id,
-                                     to_string(row->page_type),
-                                     row->category_name);
+            LOG(INFO) << fmt::format(
+                "Thread ({}): Imported {:L} rows. Last imported row: "
+                "page_id={} (a {}) → category_name={}",
+                this_thread_name(), counter, row->page_id,
+                to_string(row->page_type), row->category_name);
+    }
+}
+
+auto parallel_read_categorylinks_table(CategoryTreeIndexWriter &dst,
+                                       std::filesystem::path sqldump,
+                                       uint32_t threads) -> void {
+    auto offsets = SQLParser::split_offsets(sqldump, "categorylinks", threads);
+    std::vector<std::thread> threads_running;
+    for (uint32_t i = 0; i < threads; ++i) {
+        threads_running.emplace_back([&sqldump, &dst, &offsets, i]() {
+            set_thread_name(
+                fmt::format("categorylinks import thread #{}", i).c_str());
+            LOG(INFO) << "Starting thread #" << i << "...";
+            std::ifstream stream{sqldump, std::ios::in};
+            stream.seekg(std::get<0>(offsets[i]));
+            read_categorylinks_table(dst, stream, std::get<1>(offsets[i]),
+                                     i == 0);
+        });
+    }
+    for (auto &t : threads_running) {
+        t.join();
     }
 }
 
@@ -107,8 +135,9 @@ int main(int argc, char *argv[]) {
         absl::GetFlag(FLAGS_categorylinks_dump)};
     LOG(INFO) << "Reading categorylinks table from "
               << absl::GetFlag(FLAGS_categorylinks_dump) << "...";
-    read_categorylinks_table(category_tree_index,
-                             absl::GetFlag(FLAGS_categorylinks_dump));
+    parallel_read_categorylinks_table(category_tree_index,
+                                      absl::GetFlag(FLAGS_categorylinks_dump),
+                                      absl::GetFlag(FLAGS_threads));
     LOG(INFO) << "Done reading categorylinks table. Saved to: "
               << db_destination_path.string();
     LOG(INFO) << "Starting to build weights...";

@@ -86,14 +86,14 @@ target_link_options(primitive_serializer PRIVATE -fuse-ld=lld)
 add_library(libwikidice STATIC)
 target_sources(
     libwikidice
-    PRIVATE
+    PUBLIC
+    src/cross_platform_set_thread_name.h
     src/category_link_type.h src/category_link_type.cc
     src/category_table.h src/category_table.cc
     src/sql_parser.h src/sql_parser.cc
     src/bounded_string_ring.h src/bounded_string_ring.cc
     src/category_tree_index.h src/category_tree_index.cc
     src/wikidice_query.h src/wikidice_query.cc
-    PUBLIC
     src/category_link_type.h
     src/sql_parser.h
     src/category_tree_index.h
@@ -194,9 +194,15 @@ enable_testing()
 
 add_executable(sql_parser_test src/sql_parser_test.cc)
 target_compile_features(sql_parser_test PRIVATE cxx_std_23)
-target_compile_options(sql_parser_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
+target_compile_options(
+    sql_parser_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3
+    #-fsanitize=undefined,address -fno-omit-frame-pointer
+)
 target_link_libraries(sql_parser_test PRIVATE gtest_main gmock_main gmock libwikidice)
-target_link_options(sql_parser_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
+target_link_options(sql_parser_test PRIVATE
+    -fsanitize=undefined,address
+    -fuse-ld=lld
+)
 
 add_executable(category_tree_index_test src/category_tree_index_test.cc)
 target_compile_features(category_tree_index_test PRIVATE cxx_std_23)

@@ -5,6 +5,7 @@
 #include <istream>
 #include <locale>
 #include <sstream>
+#include <thread>
 
 #include "bounded_string_ring.h"
 #include "sql_parser.h"
@@ -135,6 +136,7 @@ EMU_identifiers','*D*L.8:NB^A\r^A<DC>^L','2021-08-29 20:33:32','','uca-default-u
 TEST(SQLParser, Simple) {
     std::istringstream stream(categorylinks_head);
     SQLParser iter{stream, "categorylinks"};
+    iter.skip_header();
     const auto row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->at(0), "10");
@@ -148,6 +150,7 @@ TEST(SQLParser, Simple) {
 TEST(SQLParser, CategoryLinksParser) {
     std::istringstream stream(categorylinks_head);
     CategoryLinksParser iter{stream};
+    iter.skip_header();
     auto row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->page_id, 10);
@@ -215,6 +218,7 @@ TEST(SQLParser, CategoryLinksParser) {
 TEST(SQLParser, CategoryTable) {
     std::istringstream stream{category_table_head};
     CategoryParser iter{stream};
+    iter.skip_header();
     auto row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->category_id, 2);
@@ -308,6 +312,7 @@ TEST(CategoryTable, TestMultipleStatements) {
 INSERT INTO `category` VALUES (3,'Something',999999999,12,0),(4,'asdfasdf',33,0,9);)";
     std::istringstream stream{input};
     auto iter = CategoryParser{stream};
+    iter.skip_header();
     auto row = iter.next();
     ASSERT_TRUE(row.has_value());
     ASSERT_EQ(row->category_id, 2);
@@ -330,50 +335,55 @@ INSERT INTO `category` VALUES (3,'Something',999999999,12,0),(4,'asdfasdf',33,0,
 }
 
 TEST(CategoryTable, TestRealDump) {
-    const auto category_dump_sql = absl::GetFlag(FLAGS_category_sql);
-    if (!category_dump_sql.empty()) {
-        std::filesystem::path category_dump_sql_path{category_dump_sql};
-        ASSERT_TRUE(std::filesystem::exists(category_dump_sql_path));
-        std::ifstream f{category_dump_sql_path};
-        CategoryParser iter{f};
-        auto row = iter.next();
-        ASSERT_TRUE(row.has_value());
-        uint64_t counter = 0;
-        while (true) {
-            ASSERT_NO_THROW(row = iter.next());
-            if (!row.has_value())
-                break;
-            counter++;
-        }
-        ASSERT_GT(counter, 10'000);
+    if (absl::GetFlag(FLAGS_category_sql).empty()) {
+        GTEST_SKIP();
     }
+    const auto category_dump_sql = absl::GetFlag(FLAGS_category_sql);
+    ASSERT_FALSE(category_dump_sql.empty());
+    std::filesystem::path category_dump_sql_path{category_dump_sql};
+    ASSERT_TRUE(std::filesystem::exists(category_dump_sql_path));
+    std::ifstream f{category_dump_sql_path};
+    CategoryParser iter{f};
+    iter.skip_header();
+    auto row = iter.next();
+    ASSERT_TRUE(row.has_value());
+    uint64_t counter = 0;
+    while (true) {
+        ASSERT_NO_THROW(row = iter.next());
+        if (!row.has_value())
+            break;
+        counter++;
+    }
+    ASSERT_GT(counter, 10'000);
 }
 
 TEST(CategoryLinksTable, TestRealDump) {
-    const auto categorylinks_dump_sql = absl::GetFlag(FLAGS_categorylinks_sql);
-    if (!categorylinks_dump_sql.empty()) {
-        std::filesystem::path categorylinks_dump_sql_path{
-            categorylinks_dump_sql};
-        ASSERT_TRUE(std::filesystem::exists(categorylinks_dump_sql_path));
-        std::ifstream f{categorylinks_dump_sql_path};
-        CategoryLinksParser iter{f};
-        auto row = iter.next();
-        ASSERT_TRUE(row.has_value());
-        uint64_t counter = 0;
-        while (true) {
-            ASSERT_NO_THROW(row = iter.next());
-            if (!row.has_value())
-                break;
-            if (++counter % 100'000 == 0) {
-                LOG(INFO) << fmt::format(
-                    "Checked {:L} rows of `categorylinks` SQL dump so far...",
-                    counter);
-            }
-        }
-        LOG(INFO) << "Read a total of " << counter
-                  << " rows in `categorylinks` dump";
-        ASSERT_GT(counter, 10'000);
+    if (absl::GetFlag(FLAGS_categorylinks_sql).empty()) {
+        GTEST_SKIP();
     }
+    const auto categorylinks_dump_sql = absl::GetFlag(FLAGS_categorylinks_sql);
+    ASSERT_FALSE(categorylinks_dump_sql.empty());
+    std::filesystem::path categorylinks_dump_sql_path{categorylinks_dump_sql};
+    ASSERT_TRUE(std::filesystem::exists(categorylinks_dump_sql_path));
+    std::ifstream f{categorylinks_dump_sql_path};
+    CategoryLinksParser iter{f};
+    iter.skip_header();
+    auto row = iter.next();
+    ASSERT_TRUE(row.has_value());
+    uint64_t counter = 0;
+    while (true) {
+        ASSERT_NO_THROW(row = iter.next());
+        if (!row.has_value())
+            break;
+        if (++counter % 100'000 == 0) {
+            LOG(INFO) << fmt::format(
+                "Checked {:L} rows of `categorylinks` SQL dump so far...",
+                counter);
+        }
+    }
+    LOG(INFO) << "Read a total of " << counter
+              << " rows in `categorylinks` dump";
+    ASSERT_GT(counter, 10'000);
 }
 
 TEST(BoundedStringRing, TestBoundedStringRingSimple) {
@@ -415,7 +425,7 @@ TEST(BoundedStringRing, TestBoundedStringRingOverflow) {
     ring.push_back('e');
     ASSERT_TRUE(ring == "abcde");
     ring.push_back('f');
-    ASSERT_EQ("bcdef", ring.str());
+    ASSERT_EQ("bcdef", ring.string());
     ring.push_back('g');
     ASSERT_TRUE(ring == "cdefg");
     ring.push_back('h');
@@ -430,6 +440,50 @@ TEST(BoundedStringRing, TestBoundedStringRingOverflow) {
     ASSERT_TRUE(ring == "hijkl");
     ring.push_back('m');
     ASSERT_TRUE(ring == "ijklm");
+}
+
+TEST(ParallelSQLParser, SplitSQLDump) {
+    if (absl::GetFlag(FLAGS_category_sql).empty()) {
+        GTEST_SKIP();
+    }
+    std::filesystem::path dump = absl::GetFlag(FLAGS_category_sql);
+    std::string_view table_name = "category";
+    uint32_t n_partitions = 7;
+    std::ifstream stream{dump, std::ios::in};
+    SQLParser serial_parser{stream, table_name};
+    serial_parser.skip_header();
+
+    // get normal row count
+    uint64_t expected_rows = 0;
+    while (serial_parser.next())
+        expected_rows++;
+    ASSERT_GT(expected_rows, 10'000);
+
+    // get row count when done in parallel
+    auto offsets = SQLParser::split_offsets(dump, table_name, n_partitions);
+    ASSERT_GE(offsets.size(), n_partitions);
+    std::vector<std::thread> threads_running;
+    std::vector<uint64_t> row_counts(offsets.size(), 0);
+    for (uint32_t i = 0; i <= offsets.size(); i++) {
+        threads_running.emplace_back([&dump, &offsets, i = i, &row_counts]() {
+            std::streamoff start = std::get<0>(offsets[i]);
+            std::streamoff end = std::get<1>(offsets[i]);
+            std::ifstream stream{dump, std::ios::in};
+            stream.seekg(start);
+            SQLParser parser{stream, "category"};
+            parser.with_stop_at(end);
+            while (parser.next())
+                row_counts[i]++;
+        });
+    }
+    for (auto &thread : threads_running) {
+        thread.join();
+    }
+
+    // Add your assertions here to validate the result
+    uint64_t parallel_row_count =
+        std::accumulate(row_counts.begin(), row_counts.end(), 0);
+    ASSERT_EQ(expected_rows, parallel_row_count);
 }
 
 int main(int argc, char *argv[]) {

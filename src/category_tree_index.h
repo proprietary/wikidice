@@ -12,6 +12,7 @@
 #include <memory>
 #include <msgpack.hpp>
 #include <rocksdb/db.h>
+#include <rocksdb/merge_operator.h>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,6 +53,20 @@ class CategoryLinkRecord {
     std::vector<uint64_t> pages_;
     std::vector<uint64_t> subcategories_;
     uint64_t weight_ = 0ULL;
+};
+
+class CategoryLinkRecordMergeOperator : public rocksdb::AssociativeMergeOperator {
+  public:
+    bool
+    Merge(const rocksdb::Slice &key, const rocksdb::Slice *existing_value,
+          const rocksdb::Slice &value,
+          std::string *new_value,
+          rocksdb::Logger *logger) const override;
+
+    const char *
+    Name() const override {
+        return "CategoryLinkRecordMergeOperator";
+    }
 };
 
 class CategoryTreeIndex {

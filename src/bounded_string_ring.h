@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <array>
 
 namespace net_zelcon::wikidice {
 
@@ -16,12 +17,10 @@ namespace net_zelcon::wikidice {
  * a circular manner.
  */
 class BoundedStringRing {
-    struct Node {
-        char c;
-        Node *next;
-    };
-    Node *iterator;
+private:
     const std::size_t size_;
+    char* const data_;
+    size_t pos_;
 
   public:
     /**
@@ -31,10 +30,10 @@ class BoundedStringRing {
      * storing fixed-size strings. It allows efficient insertion and retrieval
      * of strings in a circular manner.
      *
-     * @param size The maximum number of strings that can be stored in the ring
+     * @param size The length of the string to match
      * buffer.
      */
-    BoundedStringRing(std::size_t size);
+    explicit BoundedStringRing(std::size_t size);
 
     ~BoundedStringRing() noexcept;
 
@@ -42,6 +41,10 @@ class BoundedStringRing {
     BoundedStringRing &operator=(const BoundedStringRing &) = delete;
     BoundedStringRing(BoundedStringRing &&) = delete;
     BoundedStringRing &operator=(BoundedStringRing &&) = delete;
+
+    auto string() const noexcept -> std::string;
+
+    auto operator[](std::size_t i) const noexcept -> char;
 
     /**
      * @brief Adds a character to the end of the string ring.
@@ -65,20 +68,12 @@ class BoundedStringRing {
 
     auto size() const noexcept -> std::size_t { return size_; }
 
-    /// @brief Returns a string representation of the ring.
-    /// @details Use this for debugging only. Prefer to use
-    /// `operator==(std::string_view)`.
-    /// @return the string in the buffer
-    auto str() const noexcept -> std::string {
-        std::string s;
-        Node *cur = iterator;
-        while (cur->next != iterator) {
-            s.push_back(cur->c);
-            cur = cur->next;
-        }
-        s.push_back(cur->c);
-        return s;
-    }
+    /**
+     * @brief Clears the string ring. Resets the internal state without
+     * deallocating any memory, so the object may be used again without new
+     * allocations.
+    */
+    void clear() noexcept;
 };
 
 } // namespace net_zelcon::wikidice
