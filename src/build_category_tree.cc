@@ -53,7 +53,8 @@ auto read_category_table(const std::filesystem::path sqldump)
 }
 
 auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
-                              std::istream &table_stream, std::streamoff offset, int thread, bool skip_header = false) -> void {
+                              std::istream &table_stream, std::streamoff offset,
+                              int thread, bool skip_header = false) -> void {
     CategoryLinksParser categorylinks_parser{table_stream};
     if (skip_header) {
         categorylinks_parser.skip_header();
@@ -65,9 +66,9 @@ auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
         dst.import_categorylinks_row(row.value());
         if (++counter % 1'000'000 == 0)
             LOG(INFO) << fmt::format(
-                "Thread #{}: Imported {:L} rows. Last imported row: "
+                "Thread #{} ({}): Imported {:L} rows. Last imported row: "
                 "page_id={} (a {}) → category_name={}",
-                thread, counter, row->page_id,
+                thread, this_thread_name(), counter, row->page_id,
                 to_string(row->page_type), row->category_name);
     }
 }
@@ -80,6 +81,7 @@ auto parallel_read_categorylinks_table(CategoryTreeIndexWriter &dst,
     for (uint32_t i = 0; i < offsets.size(); ++i) {
         threads_running.emplace_back([&sqldump, &dst, &offsets, i]() {
             LOG(INFO) << "Starting thread #" << i << "...";
+            set_thread_name(fmt::format("thread #{}", i).c_str());
             std::ifstream stream{sqldump, std::ios::in};
             stream.seekg(std::get<0>(offsets[i]));
             read_categorylinks_table(dst, stream, std::get<1>(offsets[i]), i);
@@ -136,8 +138,6 @@ int main(int argc, char *argv[]) {
     parallel_read_categorylinks_table(category_tree_index,
                                       absl::GetFlag(FLAGS_categorylinks_dump),
                                       absl::GetFlag(FLAGS_threads));
-    // read_categorylinks_table(category_tree_index, categorylinks_dump_stream,
-    //                          static_cast<std::streamoff>(0), 0, true);
     LOG(INFO) << "Done reading categorylinks table. Saved to: "
               << db_destination_path.string();
     LOG(INFO) << "Starting to build weights...";

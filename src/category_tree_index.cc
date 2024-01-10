@@ -227,8 +227,8 @@ void CategoryTreeIndexWriter::add_subcategory(
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
     rocksdb::WriteOptions write_options;
-    auto status = db_->Merge(write_options, categorylinks_cf_,
-                             category_name, value);
+    auto status =
+        db_->Merge(write_options, categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
@@ -240,8 +240,8 @@ void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
     rocksdb::WriteOptions write_options;
-    auto status = db_->Merge(write_options, categorylinks_cf_,
-                             category_name, value);
+    auto status =
+        db_->Merge(write_options, categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
@@ -274,17 +274,15 @@ auto CategoryTreeIndex::lookup_weight(std::string_view category_name)
 
 void CategoryTreeIndexWriter::set_weight(const std::string_view category_name,
                                          const std::uint64_t weight) {
-    auto record = get(category_name);
-    if (record) {
-        record->weight(weight);
-        set(category_name, record.value());
-    } else {
-        LOG(WARNING) << "category_name: " << category_name
-                     << " not found in `categorylinks` column family";
-        CategoryLinkRecord new_record{};
-        new_record.weight(weight);
-        set(category_name, new_record);
-    }
+    CategoryLinkRecord new_record{};
+    new_record.weight(weight);
+    msgpack::sbuffer buf;
+    msgpack::pack(buf, new_record);
+    rocksdb::Slice value{buf.data(), buf.size()};
+    rocksdb::WriteOptions write_options;
+    auto status =
+        db_->Merge(write_options, categorylinks_cf_, category_name, value);
+    CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
 auto CategoryTreeIndexReader::pick(std::string_view category_name,
@@ -334,10 +332,13 @@ void CategoryTreeIndexWriter::build_weights() {
     read_options.adaptive_readahead = true;
     read_options.total_order_seek = true; // ignore prefix Bloom filter in read
     rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
+    uint64_t counter = 0;
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string_view category_name{it->key().data(), it->key().size()};
         const std::uint64_t weight = compute_weight(category_name);
         set_weight(category_name, weight);
+        if (++counter % 1'000'000)
+            LOG(INFO) << "Built weights for " << counter << " entries so far";
     }
     CHECK(it->status().ok()) << it->status().ToString();
 }
@@ -396,15 +397,17 @@ auto CategoryTreeIndexReader::search_categories(
     std::string_view category_name_prefix) -> std::vector<std::string> {
     std::vector<std::string> autocompletions{};
     static constexpr size_t MAX_CATEGORY_NAME_PREFIX_LEN = 1'000;
+    static constexpr size_t MAX_AUTOCOMPLETIONS = 100;
     if (category_name_prefix.length() > MAX_CATEGORY_NAME_PREFIX_LEN)
         return autocompletions;
     rocksdb::ReadOptions read_options;
     read_options.auto_prefix_mode = true;
     rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
     for (it->Seek(category_name_prefix);
-         it->Valid() && it->key().starts_with(category_name_prefix);
+         it->Valid() && it->key().starts_with(category_name_prefix) &&
+         autocompletions.size() < MAX_AUTOCOMPLETIONS;
          it->Next()) {
-        autocompletions.emplace_back(it->value().data(), it->value().size());
+        autocompletions.emplace_back(it->key().data(), it->key().size());
     }
     return autocompletions;
 }
@@ -432,16 +435,13 @@ bool CategoryLinkRecordMergeOperator::Merge(
     const rocksdb::Slice &value, std::string *new_value,
     rocksdb::Logger *) const {
     if (existing_value) {
-        CategoryLinkRecord existing_record;
-        {
-            msgpack::zone zone;
-            msgpack::unpack(zone, existing_value->data(), existing_value->size()).convert(existing_record);
-        }
-        CategoryLinkRecord new_record;
-        {
-            msgpack::zone zone;
-            msgpack::unpack(zone, value.data(), value.size()).convert(new_record);
-        }
+        msgpack::zone zone;
+        auto existing_record = msgpack::unpack(zone, existing_value->data(),
+                                               existing_value->size())
+                                   .as<CategoryLinkRecord>();
+        zone.clear();
+        auto new_record = msgpack::unpack(zone, value.data(), value.size())
+                              .as<CategoryLinkRecord>();
         if (!existing_record.pages().empty())
             for (const auto page : existing_record.pages())
                 new_record.pages_mut().push_back(page);
