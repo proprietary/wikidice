@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: WikiDice
-  description: Wikipedia random article generator by recursive category traversal
+  description: Get a random Wikipedia article under a category
   summary: Wikipedia random article generator by recursive category traversal
   version: 1.0.0
   contact:
@@ -13,17 +13,15 @@ info:
 servers:
   - url: https://wikidice.zelcon.net/api/
     description: Production server
-  - url: http://127.0.0.1:8080
-    description: Development server
 paths:
-  /random:
+  /random/{category}:
     get:
       summary: Get a random article
       description: Get a random article from Wikipedia under a category
       operationId: getRandomArticle
       parameters:
         - name: category
-          in: query
+          in: path
           description: Category to search under (recursively, including subcategories)
           required: true
           allowEmptyValue: false
