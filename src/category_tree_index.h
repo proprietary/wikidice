@@ -49,22 +49,30 @@ class CategoryLinkRecord {
     }
     void weight(const uint64_t weight) noexcept { weight_ = weight; }
 
+    /**
+     * @brief Merge another CategoryLinkRecord into this one.
+     * @details This is used by the RocksDB merge operator.
+     */
+    auto operator+= (const CategoryLinkRecord &other) -> void {
+        pages_.insert(pages_.end(), other.pages_.begin(), other.pages_.end());
+        subcategories_.insert(subcategories_.end(), other.subcategories_.begin(), other.subcategories_.end());
+        weight_ += other.weight_;
+    }
+
   private:
     std::vector<uint64_t> pages_;
     std::vector<uint64_t> subcategories_;
     uint64_t weight_ = 0ULL;
 };
 
-class CategoryLinkRecordMergeOperator : public rocksdb::AssociativeMergeOperator {
+class CategoryLinkRecordMergeOperator
+    : public rocksdb::AssociativeMergeOperator {
   public:
-    bool
-    Merge(const rocksdb::Slice &key, const rocksdb::Slice *existing_value,
-          const rocksdb::Slice &value,
-          std::string *new_value,
-          rocksdb::Logger *logger) const override;
+    bool Merge(const rocksdb::Slice &key, const rocksdb::Slice *existing_value,
+               const rocksdb::Slice &value, std::string *new_value,
+               rocksdb::Logger *logger) const override;
 
-    const char *
-    Name() const override {
+    const char *Name() const override {
         return "CategoryLinkRecordMergeOperator";
     }
 };
@@ -106,6 +114,8 @@ class CategoryTreeIndex {
 
     auto
     get(std::string_view category_name) -> std::optional<CategoryLinkRecord>;
+
+    auto to_string(const CategoryLinkRecord &) -> std::string;
 
   protected:
     auto

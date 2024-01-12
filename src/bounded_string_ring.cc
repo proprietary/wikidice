@@ -1,5 +1,7 @@
 #include "bounded_string_ring.h"
 #include <cstdlib>
+#include <string>
+#include <string_view>
 
 namespace net_zelcon::wikidice {
 

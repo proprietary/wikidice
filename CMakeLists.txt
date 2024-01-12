@@ -64,72 +64,156 @@ find_lto(CXX)
 
 # static analyzers
 
-#find_program(CPPCHECK cppcheck REQUIRED)
-#set(CMAKE_CXX_CPPCHECK ${CPPCHECK} --enable=all)
+# find_program(CPPCHECK cppcheck REQUIRED)
+# set(CMAKE_CXX_CPPCHECK ${CPPCHECK} --enable=all)
 
-#find_program(CLANGTIDY clang-tidy REQUIRED)
-#set(CMAKE_CXX_CLANG_TIDY ${CLANGTIDY})
+# find_program(CLANGTIDY clang-tidy REQUIRED)
+# set(CMAKE_CXX_CLANG_TIDY ${CLANGTIDY})
 
 # project
+
+add_library(
+    cross_platform_compat
+    INTERFACE
+)
+target_sources(
+    cross_platform_compat
+    INTERFACE
+    src/cross_platform_endian.h
+    src/cross_platform_set_thread_name.h
+)
+
+
+add_library(
+    bounded_string_ring
+    STATIC
+)
+target_sources(
+    bounded_string_ring
+    PRIVATE
+    src/bounded_string_ring.h
+    src/bounded_string_ring.cc
+    PUBLIC
+    src/bounded_string_ring.h
+)
+target_compile_features(
+    bounded_string_ring
+    PRIVATE
+    cxx_std_23
+)
+target_compile_options(
+    bounded_string_ring
+    PRIVATE
+    -Wall -Wextra -pedantic -Werror -g3
+)
+target_link_options(
+    bounded_string_ring
+    PRIVATE
+    -fuse-ld=lld
+)
 
 add_library(primitive_serializer STATIC)
 target_sources(
     primitive_serializer
-    PRIVATE src/cross_platform_endian.h src/primitive_serializer.h src/primitive_serializer.cc
+    PRIVATE src/primitive_serializer.h src/primitive_serializer.cc
     PUBLIC src/primitive_serializer.h
 )
-target_link_libraries(primitive_serializer PUBLIC absl::span)
+target_link_libraries(primitive_serializer PUBLIC absl::span cross_platform_compat)
 target_compile_features(primitive_serializer PRIVATE cxx_std_23)
 target_compile_options(primitive_serializer PRIVATE -Wall -Wextra -pedantic -Werror)
 target_link_options(primitive_serializer PRIVATE -fuse-ld=lld)
 
-add_library(libwikidice STATIC)
+add_library(category_link_type STATIC)
 target_sources(
-    libwikidice
-    PUBLIC
-    src/cross_platform_set_thread_name.h
-    src/category_link_type.h src/category_link_type.cc
-    src/category_table.h src/category_table.cc
-    src/sql_parser.h src/sql_parser.cc
-    src/bounded_string_ring.h src/bounded_string_ring.cc
-    src/category_tree_index.h src/category_tree_index.cc
-    src/wikidice_query.h src/wikidice_query.cc
+    category_link_type
+    PRIVATE
     src/category_link_type.h
+    src/category_link_type.cc
+    PUBLIC
+    src/category_link_type.h
+)
+target_compile_features(category_link_type PRIVATE cxx_std_23)
+target_compile_options(category_link_type PRIVATE -Wall -Wextra -pedantic -Werror)
+target_link_options(category_link_type PRIVATE -fuse-ld=lld)
+
+add_library(
+    sql_parser
+    STATIC
+)
+target_sources(
+    sql_parser
+    PRIVATE
     src/sql_parser.h
-    src/category_tree_index.h
-    src/wikidice_query.h
+    src/sql_parser.cc
+    PUBLIC
+    src/sql_parser.h
+)
+target_link_libraries(
+    sql_parser
+    PRIVATE
+    bounded_string_ring
+    absl::log absl::check absl::flat_hash_map
+    fmt::fmt
+    boost_headers
+    PUBLIC
+    category_link_type
 )
 target_compile_features(
-    libwikidice
+    sql_parser
+    PRIVATE
+    cxx_std_23
+)
+target_compile_options(
+    sql_parser
+    PRIVATE
+    -Wno-gcc-compat
+    -Wall -Wextra -pedantic -Werror -g3
+)
+target_link_options(
+    sql_parser
+    PRIVATE
+    -fuse-ld=lld
+)
+
+add_library(wikidice STATIC)
+target_sources(
+    wikidice
+    PUBLIC
+    src/category_table.h src/category_table.cc
+    src/category_tree_index.h src/category_tree_index.cc
+    src/wikidice_query.h src/wikidice_query.cc
+)
+target_compile_features(
+    wikidice
     PRIVATE
     cxx_std_23
 )
 # position independent code
 set_target_properties(
-    libwikidice
+    wikidice
     PROPERTIES
     POSITION_INDEPENDENT_CODE ON)
 target_compile_options(
-    libwikidice
+    wikidice
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
-    #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_options(
-    libwikidice
+    wikidice
     PRIVATE
     -fuse-ld=lld
-    #-fsanitize=undefined,address
 )
 target_link_libraries(
-    libwikidice
+    wikidice
     PUBLIC
+    cross_platform_compat
     primitive_serializer
-    fmt::fmt Threads::Threads ${Boost_LIBRARIES}
+    category_link_type
+    fmt::fmt Threads::Threads boost_headers
     absl::flags absl::flags_usage absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
-    absl::log absl::absl_check absl::log_flags absl::log_sink
+    absl::log absl::check absl::log_flags absl::log_sink
     absl::random_random absl::random_bit_gen_ref
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     absl::span
@@ -138,10 +222,8 @@ target_link_libraries(
     libzstd_static
 )
 target_include_directories(
-    libwikidice
+    wikidice
     PUBLIC
-    "${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0"
-    #"${CMAKE_CURRENT_LIST_DIR}/external/abseil-cpp"
     "${CMAKE_CURRENT_LIST_DIR}/external/zstd-1.5.5/lib"
 )
 
@@ -158,27 +240,26 @@ target_compile_options(
     PRIVATE
     -Wno-gcc-compat
     -Wall -Wextra -pedantic -Werror -g3
-    #-fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_options(
     wikidice_builder
     PRIVATE
     -fuse-ld=lld
-    #-fsanitize=undefined,address
 )
 target_link_libraries(
     wikidice_builder
-    PRIVATE
-    libwikidice fmt::fmt Threads::Threads ${Boost_LIBRARIES}
+    PUBLIC
+    sql_parser
+    wikidice fmt::fmt Threads::Threads boost_headers
+    absl::flags absl::flags_usage absl::flags_parse
+    absl::log absl::check absl::log_flags absl::log_sink
 )
 target_include_directories(wikidice_builder PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
 
 # Python module
 pybind11_add_module(pywikidice src/pywikidice.cc)
 target_compile_features(pywikidice PRIVATE cxx_std_23)
-#target_compile_options(pywikidice PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=address,undefined -fno-omit-frame-pointer)
-#target_link_options(pywikidice PRIVATE -fuse-ld=lld -fsanitize=address,undefined)
-target_link_libraries(pywikidice PRIVATE libwikidice)
+target_link_libraries(pywikidice PRIVATE wikidice)
 
 
 # Setup our project as the startup project for Visual so that people don't need to do it manually
@@ -195,27 +276,80 @@ enable_testing()
 add_executable(sql_parser_test src/sql_parser_test.cc)
 target_compile_features(sql_parser_test PRIVATE cxx_std_23)
 target_compile_options(
-    sql_parser_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3
-    #-fsanitize=undefined,address -fno-omit-frame-pointer
+    sql_parser_test
+    PUBLIC
+    -Wall -Wextra -pedantic -Werror -g3
+    -Wno-gcc-compat
+    -fsanitize=undefined,address -fno-omit-frame-pointer
 )
-target_link_libraries(sql_parser_test PRIVATE gtest_main gmock_main gmock libwikidice)
-target_link_options(sql_parser_test PRIVATE
+target_link_libraries(
+    sql_parser_test
+    PUBLIC
+    sql_parser
+    gtest_main gmock_main gmock 
+    absl::flags absl::flags_usage absl::flags_parse
+    fmt::fmt absl::log absl::check
+)
+target_link_options(
+    sql_parser_test
+    PUBLIC
     -fsanitize=undefined,address
     -fuse-ld=lld
 )
 
-add_executable(category_tree_index_test src/category_tree_index_test.cc)
+add_executable(
+    category_tree_index_test
+    src/category_tree_index_test.cc
+)
 target_compile_features(category_tree_index_test PRIVATE cxx_std_23)
-target_compile_options(category_tree_index_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
-target_link_libraries(category_tree_index_test PRIVATE gtest_main gmock_main gmock libwikidice)
-target_link_options(category_tree_index_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
+target_compile_options(
+    category_tree_index_test
+    PRIVATE
+    -Wno-gcc-compat -Wall -Wextra -pedantic -Werror
+    -g3 -fsanitize=undefined,address -fno-omit-frame-pointer
+)
+target_link_options(
+    category_tree_index_test
+    PRIVATE
+    -fsanitize=undefined,address -fuse-ld=lld
+)
+target_link_libraries(
+    category_tree_index_test
+    PUBLIC
+    gtest_main gmock_main gmock wikidice
+)
 
 add_executable(primitive_serializer_test src/primitive_serializer_test.cc)
 target_compile_features(primitive_serializer_test PRIVATE cxx_std_23)
-target_compile_options(primitive_serializer_test PRIVATE -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3 -fsanitize=undefined,address -fno-omit-frame-pointer)
-target_link_libraries(primitive_serializer_test PRIVATE primitive_serializer gtest_main gmock_main gmock absl::span)
-target_link_options(primitive_serializer_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
+target_compile_options(
+    primitive_serializer_test
+    PRIVATE
+    -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3
+    -fsanitize=undefined,address -fno-omit-frame-pointer
+)
+target_link_libraries(
+    primitive_serializer_test
+    PRIVATE
+    primitive_serializer gtest_main gmock_main gmock absl::span
+)
+target_link_options(
+    primitive_serializer_test
+    PRIVATE
+    -fsanitize=undefined,address -fuse-ld=lld
+)
+
+add_executable(bounded_string_ring_test src/bounded_string_ring_test.cc)
+target_compile_features(bounded_string_ring_test PRIVATE cxx_std_23)
+target_link_libraries(bounded_string_ring_test PRIVATE bounded_string_ring gtest_main gmock_main gmock)
+target_compile_options(
+    bounded_string_ring_test
+    PRIVATE
+    -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3
+    -fsanitize=undefined,address -fno-omit-frame-pointer
+)
+target_link_options(bounded_string_ring_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
 
 include(GoogleTest)
 gtest_discover_tests(sql_parser_test)
 gtest_discover_tests(category_tree_index_test)
+gtest_discover_tests(bounded_string_ring_test)

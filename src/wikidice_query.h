@@ -19,6 +19,7 @@ class Session {
     auto pick_random_article(std::string_view category_name)
         -> std::pair<uint64_t, bool>;
     auto take(uint64_t n) -> std::vector<std::string>;
+    auto get_entry(std::string_view category_name) -> std::string;
     explicit Session(const std::filesystem::path);
     explicit Session(std::string_view);
 

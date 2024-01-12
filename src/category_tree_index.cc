@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <fmt/core.h>
+#include <fmt/ranges.h>
 #include <iterator>
 #include <queue>
 #include <rocksdb/filter_policy.h>
@@ -221,8 +222,7 @@ void CategoryTreeIndexWriter::add_subcategory(
                    << std::quoted(subcategory_name);
         return;
     }
-    new_record.subcategories_mut().emplace_back(
-        subcategory_details->category_id);
+    new_record.subcategories_mut().push_back(subcategory_details->category_id);
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
@@ -442,13 +442,7 @@ bool CategoryLinkRecordMergeOperator::Merge(
         zone.clear();
         auto new_record = msgpack::unpack(zone, value.data(), value.size())
                               .as<CategoryLinkRecord>();
-        if (!existing_record.pages().empty())
-            for (const auto page : existing_record.pages())
-                new_record.pages_mut().push_back(page);
-        if (!existing_record.subcategories().empty())
-            for (const auto subcat : existing_record.subcategories())
-                new_record.subcategories_mut().push_back(subcat);
-        new_record.weight_mut() += existing_record.weight();
+        new_record += existing_record;
         msgpack::sbuffer sbuf;
         msgpack::pack(sbuf, new_record);
         new_value->assign(sbuf.data(), sbuf.size());
@@ -456,6 +450,15 @@ bool CategoryLinkRecordMergeOperator::Merge(
         new_value->assign(value.data(), value.size());
     }
     return true;
+}
+
+auto CategoryTreeIndex::to_string(const CategoryLinkRecord &record)
+    -> std::string {
+    auto subcat_names = map_categories(record.subcategories());
+    return fmt::format("CategoryLinkRecord: pages = {}, subcategories = {}, "
+                       "subcategories (nums) = {}, weight = {}",
+                       record.pages(), subcat_names, record.subcategories(),
+                       record.weight());
 }
 
 } // namespace net_zelcon::wikidice

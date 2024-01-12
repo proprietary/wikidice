@@ -1,5 +1,6 @@
 #include "category_link_type.h"
 #include <stdexcept>
+#include <string_view>
 
 namespace net_zelcon::wikidice {
 

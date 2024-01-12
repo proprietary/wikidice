@@ -16,7 +16,8 @@ add_subdirectory(abseil-cpp)
 add_subdirectory(fmt-10.1.0)
 
 # Boost
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0)
+add_library(boost_headers INTERFACE)
+target_include_directories(boost_headers INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0)
 
 # msgpack
 FetchContent_Declare(

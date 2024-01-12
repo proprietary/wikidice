@@ -33,6 +33,14 @@ auto Session::take(uint64_t n) -> std::vector<std::string> {
     return dst;
 }
 
+auto Session::get_entry(std::string_view category_name) -> std::string {
+    auto entry = index_->get(category_name);
+    if (!entry)
+        return {};
+    auto s = index_->to_string(entry.value());
+    return fmt::format("Category {}: {}", category_name, s);
+}
+
 Session::Session(const std::filesystem::path db_path) {
     // check path
     if (!std::filesystem::exists(db_path) ||

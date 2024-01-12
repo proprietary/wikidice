@@ -2,6 +2,7 @@
 #include <absl/flags/parse.h>
 #include <absl/flags/usage.h>
 #include <absl/log/log.h>
+#include <absl/log/check.h>
 #include <absl/strings/str_cat.h>
 #include <absl/strings/string_view.h>
 #include <algorithm>

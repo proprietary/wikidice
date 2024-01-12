@@ -1,6 +1,7 @@
 #include "sql_parser.h"
 #include "bounded_string_ring.h"
 #include <absl/log/log.h>
+#include <absl/log/check.h>
 #include <array>
 #include <boost/algorithm/algorithm.hpp>
 #include <boost/algorithm/string.hpp>

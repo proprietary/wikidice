@@ -1,13 +1,10 @@
 #pragma once
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/log/check.h>
-#include <absl/log/log.h>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fmt/core.h>
 #include <fstream>
 #include <functional>
 #include <iostream>

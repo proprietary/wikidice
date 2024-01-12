@@ -12,5 +12,6 @@ PYBIND11_MODULE(pywikidice, m) {
              &net_zelcon::wikidice::Session::pick_random_article)
         .def("autocomplete_category_name",
              &net_zelcon::wikidice::Session::autocomplete_category_name)
-        .def("take", &net_zelcon::wikidice::Session::take);
+        .def("take", &net_zelcon::wikidice::Session::take)
+        .def("get_entry", &net_zelcon::wikidice::Session::get_entry);
 }
