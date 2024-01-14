@@ -7,4 +7,5 @@ gunzip enwiki-latest-categorylinks.sql.gz
 mkdir -p data/wikidice.db
 ./build/wikidice_builder --category_dump enwiki-latest-category.sql \
     --categorylinks_dump enwiki-latest-categorylinks.sql \
-    --db_path data/wikidice.db
+    --db_path data/wikidice.db \
+    --threads $(nproc)
