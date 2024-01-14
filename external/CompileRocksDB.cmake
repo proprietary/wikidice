@@ -21,14 +21,14 @@ set(RocksDB_CMAKE_ARGS
 ExternalProject_Add(
   rocksdb
   PREFIX "${CMAKE_BINARY_DIR}/rocksdb"
-  SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/rocksdb-8.9.1"
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/rocksdb-8.10.0"
   CMAKE_ARGS ${RocksDB_CMAKE_ARGS}
   BUILD_BYPRODUCTS <BINARY_DIR>/librocksdb.a
   INSTALL_COMMAND ""
 )
 
 add_library(rocksdb-compiled INTERFACE)
-add_dependencies(rocksdb-compiled rocksdb)
+add_dependencies(rocksdb-compiled rocksdb libzstd_static)
 ExternalProject_Get_Property(rocksdb BINARY_DIR)
 target_link_libraries(rocksdb-compiled INTERFACE "${BINARY_DIR}/librocksdb.a")
 ExternalProject_Get_Property(rocksdb SOURCE_DIR)

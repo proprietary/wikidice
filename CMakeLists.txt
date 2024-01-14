@@ -39,9 +39,11 @@ include(Coverage)
 
 find_package(Threads REQUIRED)
 find_package(Python 3.11 COMPONENTS Interpreter Development REQUIRED)
+find_package(zstd REQUIRED)
 
 # External dependencies
 add_subdirectory(external)
+
 
 # It is always easier to navigate in an IDE when projects are organized in folders.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -104,12 +106,7 @@ target_compile_features(
 target_compile_options(
     bounded_string_ring
     PRIVATE
-    -Wall -Wextra -pedantic -Werror -g3
-)
-target_link_options(
-    bounded_string_ring
-    PRIVATE
-    -fuse-ld=lld
+    -Wall -Wextra -Werror
 )
 
 add_library(primitive_serializer STATIC)
@@ -120,7 +117,7 @@ target_sources(
 )
 target_link_libraries(primitive_serializer PUBLIC absl::span cross_platform_compat)
 target_compile_features(primitive_serializer PRIVATE cxx_std_23)
-target_compile_options(primitive_serializer PRIVATE -Wall -Wextra -pedantic -Werror)
+target_compile_options(primitive_serializer PRIVATE -Wall -Wextra -Werror)
 target_link_options(primitive_serializer PRIVATE -fuse-ld=lld)
 
 add_library(category_link_type STATIC)
@@ -133,8 +130,7 @@ target_sources(
     src/category_link_type.h
 )
 target_compile_features(category_link_type PRIVATE cxx_std_23)
-target_compile_options(category_link_type PRIVATE -Wall -Wextra -pedantic -Werror)
-target_link_options(category_link_type PRIVATE -fuse-ld=lld)
+target_compile_options(category_link_type PRIVATE -Wall -Wextra -Werror)
 
 add_library(
     sql_parser
@@ -166,14 +162,9 @@ target_compile_features(
 target_compile_options(
     sql_parser
     PRIVATE
-    -Wno-gcc-compat
-    -Wall -Wextra -pedantic -Werror -g3
+    -Wall -Wextra -Werror
 )
-target_link_options(
-    sql_parser
-    PRIVATE
-    -fuse-ld=lld
-)
+
 
 add_library(wikidice STATIC)
 target_sources(
@@ -196,13 +187,7 @@ set_target_properties(
 target_compile_options(
     wikidice
     PRIVATE
-    -Wno-gcc-compat
-    -Wall -Wextra -pedantic -Werror -g3
-)
-target_link_options(
-    wikidice
-    PRIVATE
-    -fuse-ld=lld
+    -Wall -Wextra -Werror
 )
 target_link_libraries(
     wikidice
@@ -219,12 +204,7 @@ target_link_libraries(
     absl::span
     rocksdb-compiled
     msgpack-cxx
-    libzstd_static
-)
-target_include_directories(
-    wikidice
-    PUBLIC
-    "${CMAKE_CURRENT_LIST_DIR}/external/zstd-1.5.5/lib"
+    zstd
 )
 
 add_executable(wikidice_builder)
@@ -238,13 +218,7 @@ target_compile_features(wikidice_builder PRIVATE cxx_std_23)
 target_compile_options(
     wikidice_builder
     PRIVATE
-    -Wno-gcc-compat
-    -Wall -Wextra -pedantic -Werror -g3
-)
-target_link_options(
-    wikidice_builder
-    PRIVATE
-    -fuse-ld=lld
+    -Wall -Wextra -Werror
 )
 target_link_libraries(
     wikidice_builder
@@ -254,7 +228,6 @@ target_link_libraries(
     absl::flags absl::flags_usage absl::flags_parse
     absl::log absl::check absl::log_flags absl::log_sink
 )
-target_include_directories(wikidice_builder PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/boost_1_84_0)
 
 # Python module
 pybind11_add_module(pywikidice src/pywikidice.cc)
@@ -277,9 +250,8 @@ add_executable(sql_parser_test src/sql_parser_test.cc)
 target_compile_features(sql_parser_test PRIVATE cxx_std_23)
 target_compile_options(
     sql_parser_test
-    PUBLIC
-    -Wall -Wextra -pedantic -Werror -g3
-    -Wno-gcc-compat
+    PRIVATE
+    -Wall -Wextra -Werror -g3
     -fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_libraries(
@@ -305,7 +277,7 @@ target_compile_features(category_tree_index_test PRIVATE cxx_std_23)
 target_compile_options(
     category_tree_index_test
     PRIVATE
-    -Wno-gcc-compat -Wall -Wextra -pedantic -Werror
+    -Wall -Wextra -Werror -g3
     -g3 -fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_options(
@@ -324,7 +296,7 @@ target_compile_features(primitive_serializer_test PRIVATE cxx_std_23)
 target_compile_options(
     primitive_serializer_test
     PRIVATE
-    -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3
+    -Wall -Wextra -Werror -g3
     -fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_libraries(
@@ -335,7 +307,7 @@ target_link_libraries(
 target_link_options(
     primitive_serializer_test
     PRIVATE
-    -fsanitize=undefined,address -fuse-ld=lld
+    -fsanitize=undefined,address
 )
 
 add_executable(bounded_string_ring_test src/bounded_string_ring_test.cc)
@@ -344,7 +316,7 @@ target_link_libraries(bounded_string_ring_test PRIVATE bounded_string_ring gtest
 target_compile_options(
     bounded_string_ring_test
     PRIVATE
-    -Wno-gcc-compat -Wall -Wextra -pedantic -Werror -g3
+    -Wall -Wextra -Werror -g3
     -fsanitize=undefined,address -fno-omit-frame-pointer
 )
 target_link_options(bounded_string_ring_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)

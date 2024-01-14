@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.24)
 
 include(FetchContent)
+include(ExternalProject)
 
 # GoogleTest requires at least C++14
 set(CMAKE_CXX_STANDARD 20)
@@ -16,8 +17,11 @@ add_subdirectory(abseil-cpp)
 add_subdirectory(fmt-10.1.0)
 
 # Boost
+set(BOOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0")
+find_package(Boost REQUIRED)
 add_library(boost_headers INTERFACE)
 target_include_directories(boost_headers INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0)
+
 
 # msgpack
 FetchContent_Declare(
@@ -26,19 +30,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(msgpack-cxx)
 
-# zstandard
-set(ZSTD_BUILD_STATIC ON)
-set(ZSTD_BUILD_SHARED OFF)
-set(ZSTD_BUILD_TESTS OFF)
-FetchContent_Declare(
-    zstd
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/zstd-1.5.5
-    SOURCE_SUBDIR build/cmake
-)
-FetchContent_MakeAvailable(zstd)
-
 # RocksDB
 include(CompileRocksDB.cmake)
+add_dependencies(rocksdb-compiled zstd::libzstd_static)
 
 # Pybind11
 add_subdirectory(pybind11-2.11.1)
