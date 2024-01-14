@@ -1,22 +1,17 @@
 { lib
 , llvmPackages_17
-, boost183
 , cmake
-, rocksdb
-, python311Packages.python
 }:
 
 llvmPackages_17.libcxxStdenv.mkDerivation rec {
   pname = "wikidice";
-  version = "0.2.0";
+  version = "2.0.0";
   
   src = ./.;
 
-  nativeBuildInputs = [ cmake ];
+  nativeBuildInputs = [ cmake ninja ];
   buildInputs = [
-    boost183
-    rocksdb
-    llvmPackages_17.libcxx
+    zstd
   ];
 
   cmakeFlags = [

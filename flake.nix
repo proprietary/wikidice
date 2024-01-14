@@ -2,14 +2,7 @@
   description = "A template for Nix based C++ project setup.";
 
   inputs = {
-    # Pointing to the current stable release of nixpkgs. You can
-    # customize this to point to an older version or unstable if you
-    # like everything shining.
-    #
-    # E.g.
-    #
-    # nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nixpkgs.url = "github:NixOS/nixpkgs/release-23.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     utils.url = "github:numtide/flake-utils";
   };
@@ -21,33 +14,25 @@
   ] (system: let
     pkgs = import nixpkgs {
       inherit system;
-
-      # Add overlays here if you need to override the nixpkgs
-      # official packages.
-      overlays = [];
-      
-      # Uncomment this if you need unfree software (e.g. cuda) for
-      # your project.
-      #
-      # config.allowUnfree = true;
     };
   in {
     devShells.default = pkgs.mkShell rec {
       # Update the name to something that suites your project.
       name = "wikidice";
-      stdenv = pkgs.llvmPackages_16.libcxxStdenv;
+      stdenv = pkgs.llvmPackages_17.libcxxStdenv;
       packages = with pkgs; [
         # Development Tools
-        gnumake
         cmake
+        ninja
         extra-cmake-modules
         pkg-config
+        llvmPackages_17.clang
   
         # Development time dependencies
         cppcheck
 
         # Build time and Run time dependencies
-        lz4
+        zstd
       ];
 
       # Setting up the environment variables you need during
