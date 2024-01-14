@@ -1,5 +1,6 @@
 #include "bounded_string_ring.h"
-#include <cstdlib>
+#include <stdlib.h>
+#include <cstring>
 #include <string>
 #include <string_view>
 
@@ -24,7 +25,7 @@ void BoundedStringRing::push_back(char c) noexcept {
 }
 
 void BoundedStringRing::clear() noexcept {
-    std::memset(data_, '\0', size_);
+  std::memset(data_, '\0', size_);
 }
 
 bool BoundedStringRing::operator==(std::string_view other) const noexcept {

@@ -67,7 +67,7 @@ std::string this_thread_name() {
 void set_thread_name(const char* thread_name) {
     ::prctl(PR_SET_NAME, thread_name, 0, 0, 0);
 }
-std::string this_thread_name(std::thread& thread) {
+std::string this_thread_name() {
     std::string name(2 << 10, '\0');
     ::prctl(PR_GET_NAME, name.data(), 0, 0, 0);
     name.shrink_to_fit();

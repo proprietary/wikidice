@@ -193,7 +193,7 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
      */
     auto compute_weight(
         std::string_view category_name,
-        float32_t max_depth = std::numeric_limits<float32_t>::infinity())
+        float max_depth = std::numeric_limits<float>::infinity())
         -> std::uint64_t;
 
   private:

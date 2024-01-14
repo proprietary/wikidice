@@ -344,7 +344,7 @@ void CategoryTreeIndexWriter::build_weights() {
 }
 
 auto CategoryTreeIndexWriter::compute_weight(
-    std::string_view category_name, float32_t max_depth) -> std::uint64_t {
+    std::string_view category_name, float max_depth) -> std::uint64_t {
     uint64_t weight = 0;
     if (!get(category_name)) {
         LOG(WARNING) << "category name: " << std::quoted(category_name)
@@ -354,7 +354,7 @@ auto CategoryTreeIndexWriter::compute_weight(
     std::vector<std::string> categories_visited;
     std::queue<std::string> categories_to_visit;
     categories_to_visit.emplace(category_name);
-    float32_t depth = 0.;
+    float depth = 0.;
     while (!categories_to_visit.empty() && depth <= max_depth) {
         const auto top = categories_to_visit.front();
         categories_to_visit.pop();
