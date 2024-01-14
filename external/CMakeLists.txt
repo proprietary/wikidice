@@ -3,10 +3,13 @@ cmake_minimum_required(VERSION 3.24)
 include(FetchContent)
 include(ExternalProject)
 
-# GoogleTest requires at least C++14
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_subdirectory(googletest-1.14.0)
+#add_subdirectory(googletest-1.14.0)
+FetchContent_Declare(
+    googletest
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/googletest-1.14.0
+    CMAKE_ARGS -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON
+)
+FetchContent_MakeAvailable(googletest)
 
 # Abseil
 set(ABSL_PROPAGATE_CXX_STD ON)
@@ -32,7 +35,6 @@ FetchContent_MakeAvailable(msgpack-cxx)
 
 # RocksDB
 include(CompileRocksDB.cmake)
-add_dependencies(rocksdb-compiled zstd::libzstd_static)
 
 # Pybind11
 add_subdirectory(pybind11-2.11.1)

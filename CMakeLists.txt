@@ -39,7 +39,7 @@ include(Coverage)
 
 find_package(Threads REQUIRED)
 find_package(Python 3.11 COMPONENTS Interpreter Development REQUIRED)
-find_package(zstd REQUIRED)
+find_package(gtest REQUIRED)
 
 # External dependencies
 add_subdirectory(external)
@@ -202,9 +202,8 @@ target_link_libraries(
     absl::random_random absl::random_bit_gen_ref
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     absl::span
-    rocksdb-compiled
     msgpack-cxx
-    zstd
+    rocksdb-compiled
 )
 
 add_executable(wikidice_builder)
@@ -259,8 +258,9 @@ target_link_libraries(
     PUBLIC
     sql_parser
     gtest_main gmock_main gmock 
+    fmt::fmt
+    absl::log absl::check
     absl::flags absl::flags_usage absl::flags_parse
-    fmt::fmt absl::log absl::check
 )
 target_link_options(
     sql_parser_test
@@ -302,7 +302,9 @@ target_compile_options(
 target_link_libraries(
     primitive_serializer_test
     PRIVATE
-    primitive_serializer gtest_main gmock_main gmock absl::span
+    primitive_serializer
+    gtest_main gmock_main gmock
+    absl::span
 )
 target_link_options(
     primitive_serializer_test
@@ -312,7 +314,12 @@ target_link_options(
 
 add_executable(bounded_string_ring_test src/bounded_string_ring_test.cc)
 target_compile_features(bounded_string_ring_test PRIVATE cxx_std_23)
-target_link_libraries(bounded_string_ring_test PRIVATE bounded_string_ring gtest_main gmock_main gmock)
+target_link_libraries(
+    bounded_string_ring_test
+    PRIVATE
+    bounded_string_ring
+    gtest_main gmock_main gmock
+)
 target_compile_options(
     bounded_string_ring_test
     PRIVATE

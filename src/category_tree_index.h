@@ -53,9 +53,11 @@ class CategoryLinkRecord {
      * @brief Merge another CategoryLinkRecord into this one.
      * @details This is used by the RocksDB merge operator.
      */
-    auto operator+= (const CategoryLinkRecord &other) -> void {
+    auto operator+=(const CategoryLinkRecord &other) -> void {
         pages_.insert(pages_.end(), other.pages_.begin(), other.pages_.end());
-        subcategories_.insert(subcategories_.end(), other.subcategories_.begin(), other.subcategories_.end());
+        subcategories_.insert(subcategories_.end(),
+                              other.subcategories_.begin(),
+                              other.subcategories_.end());
         weight_ += other.weight_;
     }
 
@@ -112,26 +114,36 @@ class CategoryTreeIndex {
 
     auto db() const noexcept -> rocksdb::DB * { return db_; }
 
-    auto
-    get(std::string_view category_name) -> std::optional<CategoryLinkRecord>;
+    auto get(std::string_view category_name)
+        -> std::optional<CategoryLinkRecord>;
 
     auto to_string(const CategoryLinkRecord &) -> std::string;
 
-  protected:
-    auto
-    lookup_pages(std::string_view category_name) -> std::vector<std::uint64_t>;
+    auto count_rows() -> uint64_t;
 
-    auto
-    lookup_subcats(std::string_view category_name) -> std::vector<std::string>;
+  protected:
+    auto lookup_pages(std::string_view category_name)
+        -> std::vector<std::uint64_t>;
+
+    auto lookup_subcats(std::string_view category_name)
+        -> std::vector<std::string>;
 
     auto lookup_weight(std::string_view category_name)
         -> std::optional<std::uint64_t>;
 
-    auto at_index(std::string_view category_name,
-                  std::uint64_t index) -> std::uint64_t;
+    auto at_index(std::string_view category_name, std::uint64_t index)
+        -> std::uint64_t;
 
-    virtual auto
-    category_name_of(uint64_t category_id) -> std::optional<std::string>;
+    virtual auto category_name_of(uint64_t category_id)
+        -> std::optional<std::string>;
+
+    void run_compaction();
+
+    virtual auto categorylinks_cf_options() const
+        -> rocksdb::ColumnFamilyOptions;
+
+    static constexpr size_t PREFIX_CAP_LEN = 8;
+    static constexpr size_t BLOOM_FILTER_BITS_PER_KEY = 10;
 
   private:
     /**
@@ -139,12 +151,7 @@ class CategoryTreeIndex {
      */
     auto map_categories(absl::Span<const uint64_t>) -> std::vector<std::string>;
 
-    auto categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions;
     auto category_id_to_name_cf_options() const -> rocksdb::ColumnFamilyOptions;
-
-  private:
-    static constexpr size_t PREFIX_CAP_LEN = 8;
-    static constexpr size_t BLOOM_FILTER_BITS_PER_KEY = 10;
 };
 
 class CategoryTreeIndexWriter : public CategoryTreeIndex {
@@ -163,8 +170,11 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
     CategoryTreeIndexWriter &operator=(CategoryTreeIndexWriter &&) = default;
 
   protected:
-    auto
-    category_name_of(uint64_t category_id) -> std::optional<std::string> final;
+    auto categorylinks_cf_options() const
+        -> rocksdb::ColumnFamilyOptions override;
+
+    auto category_name_of(uint64_t category_id)
+        -> std::optional<std::string> final;
 
   private:
     void set(std::string_view category_name, const CategoryLinkRecord &);
@@ -191,9 +201,9 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
      * category, plus the number of pages in all subcategories, plus the number
      * of pages in all sub-subcategories, etc. up to the specified depth.
      */
-    auto compute_weight(
-        std::string_view category_name,
-        float max_depth = std::numeric_limits<float>::infinity())
+    auto
+    compute_weight(std::string_view category_name,
+                   float max_depth = std::numeric_limits<float>::infinity())
         -> std::uint64_t;
 
   private:
@@ -202,8 +212,8 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
 class CategoryTreeIndexReader : public CategoryTreeIndex {
   public:
-    auto pick(std::string_view category_name,
-              absl::BitGenRef random_generator) -> std::optional<std::uint64_t>;
+    auto pick(std::string_view category_name, absl::BitGenRef random_generator)
+        -> std::optional<std::uint64_t>;
 
     auto search_categories(std::string_view category_name_prefix)
         -> std::vector<std::string>;
@@ -212,8 +222,7 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
         std::function<bool(std::string_view, const CategoryLinkRecord &)>)
         -> void;
 
-    explicit CategoryTreeIndexReader(const std::filesystem::path db_path)
-        : CategoryTreeIndex(db_path) {}
+    explicit CategoryTreeIndexReader(const std::filesystem::path db_path);
 
     CategoryTreeIndexReader(CategoryTreeIndexReader &&) = default;
 

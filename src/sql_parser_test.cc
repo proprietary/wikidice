@@ -1,9 +1,9 @@
-#include <gtest/gtest.h>
 #include <absl/flags/flag.h>
 #include <absl/flags/parse.h>
 #include <absl/log/log.h>
-#include <fmt/core.h>
 #include <filesystem>
+#include <fmt/core.h>
+#include <gtest/gtest.h>
 #include <istream>
 #include <locale>
 #include <sstream>

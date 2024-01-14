@@ -1,10 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <array>
 
 namespace net_zelcon::wikidice {
 
@@ -17,9 +17,9 @@ namespace net_zelcon::wikidice {
  * a circular manner.
  */
 class BoundedStringRing {
-private:
+  private:
     const std::size_t size_;
-    char* const data_;
+    char *const data_;
     size_t pos_;
 
   public:
@@ -72,7 +72,7 @@ private:
      * @brief Clears the string ring. Resets the internal state without
      * deallocating any memory, so the object may be used again without new
      * allocations.
-    */
+     */
     void clear() noexcept;
 };
 

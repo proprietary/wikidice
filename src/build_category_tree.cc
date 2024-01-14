@@ -1,8 +1,8 @@
 #include <absl/flags/flag.h>
 #include <absl/flags/parse.h>
 #include <absl/flags/usage.h>
-#include <absl/log/log.h>
 #include <absl/log/check.h>
+#include <absl/log/log.h>
 #include <absl/strings/str_cat.h>
 #include <absl/strings/string_view.h>
 #include <algorithm>
@@ -130,20 +130,26 @@ int main(int argc, char *argv[]) {
     const auto db_destination_path =
         std::filesystem::path{absl::GetFlag(FLAGS_db_path)} /
         std::filesystem::path{absl::GetFlag(FLAGS_wikipedia_language_code)};
-    CategoryTreeIndexWriter category_tree_index{db_destination_path,
-                                                category_table};
-    std::ifstream categorylinks_dump_stream{
-        absl::GetFlag(FLAGS_categorylinks_dump)};
-    LOG(INFO) << "Reading categorylinks table from "
-              << absl::GetFlag(FLAGS_categorylinks_dump) << "...";
-    parallel_read_categorylinks_table(category_tree_index,
-                                      absl::GetFlag(FLAGS_categorylinks_dump),
-                                      absl::GetFlag(FLAGS_threads));
-    LOG(INFO) << "Done reading categorylinks table. Saved to: "
-              << db_destination_path.string();
-    LOG(INFO) << "Starting to build weights...";
-    category_tree_index.run_second_pass();
-    LOG(INFO) << "Done building weights. Saved to: "
-              << db_destination_path.string();
+    {
+        CategoryTreeIndexWriter category_tree_index{db_destination_path,
+                                                    category_table};
+        std::ifstream categorylinks_dump_stream{
+            absl::GetFlag(FLAGS_categorylinks_dump)};
+        LOG(INFO) << "Reading categorylinks table from "
+                  << absl::GetFlag(FLAGS_categorylinks_dump) << "...";
+        parallel_read_categorylinks_table(
+            category_tree_index, absl::GetFlag(FLAGS_categorylinks_dump),
+            absl::GetFlag(FLAGS_threads));
+        LOG(INFO) << "Done reading categorylinks table. Saved to: "
+                  << db_destination_path.string();
+        LOG(INFO) << "Starting to build weights...";
+        category_tree_index.run_second_pass();
+        LOG(INFO) << "Done building weights. Saved to: "
+                  << db_destination_path.string();
+    }
+    LOG(INFO) << "Compressing database to ready it for reads...";
+    CategoryTreeIndexReader category_tree_index_reader{db_destination_path};
+    const auto rows = category_tree_index_reader.count_rows();
+    LOG(INFO) << "Built database with " << rows << " rows.";
     return 0;
 }

@@ -1,4 +1,14 @@
+include(FetchContent)
 include(ExternalProject)
+
+FetchContent_Declare(
+  zstd
+  SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/zstd-1.5.5"
+  SOURCE_SUBDIR build/cmake
+  CMAKE_ARGS -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_PROGRAMS=OFF
+  OVERRIDE_FIND_PACKAGE
+)
+FetchContent_MakeAvailable(zstd)
 
 set(RocksDB_CMAKE_ARGS
   -DUSE_RTTI=1
@@ -15,7 +25,6 @@ set(RocksDB_CMAKE_ARGS
   -DWITH_ZSTD=ON
   -DROCKSDB_BUILD_SHARED=OFF
   -DCMAKE_POSITION_INDEPENDENT_CODE=True
-  -DCMAKE_INSTALL_PREFIX="${CMAKE_BINARY_DIR}/rocksdb"
   -DCMAKE_CXX_FLAGS="-DZSTD_STATIC_LINKING_ONLY"
 )
 ExternalProject_Add(

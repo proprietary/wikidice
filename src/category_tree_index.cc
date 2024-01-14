@@ -14,22 +14,37 @@
 #include <rocksdb/table.h>
 #include <span>
 #include <stdexcept>
-#include <zstd.h>
 
 namespace net_zelcon::wikidice {
+
+auto CategoryTreeIndexWriter::categorylinks_cf_options() const
+    -> rocksdb::ColumnFamilyOptions {
+    rocksdb::ColumnFamilyOptions cf_options;
+    // add merge operator to merge CategoryLinkRecords
+    cf_options.merge_operator.reset(new CategoryLinkRecordMergeOperator);
+    // set write buffer size
+    cf_options.write_buffer_size = 512 * (1 << 20);
+    cf_options.max_write_buffer_number = 8;
+    // enable Bloom filter for efficient prefix seek
+    rocksdb::BlockBasedTableOptions table_options;
+    table_options.filter_policy.reset(
+        rocksdb::NewRibbonFilterPolicy(BLOOM_FILTER_BITS_PER_KEY));
+    cf_options.table_factory.reset(
+        rocksdb::NewBlockBasedTableFactory(table_options));
+    cf_options.prefix_extractor.reset(
+        rocksdb::NewCappedPrefixTransform(PREFIX_CAP_LEN));
+    return cf_options;
+}
 
 auto CategoryTreeIndex::categorylinks_cf_options() const
     -> rocksdb::ColumnFamilyOptions {
     rocksdb::ColumnFamilyOptions cf_options;
     // add merge operator to merge CategoryLinkRecords
     cf_options.merge_operator.reset(new CategoryLinkRecordMergeOperator);
-    // set write buffer size
-    cf_options.write_buffer_size = 128 * (1 << 20);
-    cf_options.max_write_buffer_number = 3;
     // enable compression
     cf_options.compression = rocksdb::kZSTD;
     cf_options.bottommost_compression = rocksdb::kZSTD;
-    cf_options.compression_opts.level = ZSTD_maxCLevel();
+    cf_options.compression_opts.level = 22;
     cf_options.compression_opts.max_dict_bytes = 8192;
     cf_options.compression_opts.zstd_max_train_bytes = 8192;
     // enable Bloom filter for efficient prefix seek
@@ -50,7 +65,7 @@ auto CategoryTreeIndex::category_id_to_name_cf_options() const
     // enable compression
     cf_options.compression = rocksdb::kZSTD;
     cf_options.bottommost_compression = rocksdb::kZSTD;
-    cf_options.compression_opts.level = ZSTD_maxCLevel();
+    cf_options.compression_opts.level = 22;
     cf_options.compression_opts.max_dict_bytes = 8192;
     cf_options.compression_opts.zstd_max_train_bytes = 8192;
     return cf_options;
@@ -82,6 +97,16 @@ CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
     categorylinks_cf_ = column_family_handles_[1];
     CHECK_EQ(column_family_handles_[2]->GetName(), "category_id_to_name");
     category_id_to_name_cf_ = column_family_handles_[2];
+}
+
+void CategoryTreeIndex::run_compaction() {
+    LOG(INFO) << "Performing manual compaction on the RocksDB database...";
+    rocksdb::CompactRangeOptions compact_options;
+    compact_options.change_level = true;
+    compact_options.target_level = 0;
+    compact_options.bottommost_level_compaction =
+        rocksdb::BottommostLevelCompaction::kForce;
+    db_->CompactRange(compact_options, categorylinks_cf_, nullptr, nullptr);
 }
 
 auto CategoryTreeIndex::category_name_of(uint64_t category_id)
@@ -343,8 +368,8 @@ void CategoryTreeIndexWriter::build_weights() {
     CHECK(it->status().ok()) << it->status().ToString();
 }
 
-auto CategoryTreeIndexWriter::compute_weight(
-    std::string_view category_name, float max_depth) -> std::uint64_t {
+auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
+                                             float max_depth) -> std::uint64_t {
     uint64_t weight = 0;
     if (!get(category_name)) {
         LOG(WARNING) << "category name: " << std::quoted(category_name)
@@ -384,13 +409,13 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
     flush_options.wait = true;
     db_->Flush(flush_options);
     // perform manual compaction
-    LOG(INFO) << "Performing manual compaction on the RocksDB database...";
-    rocksdb::CompactRangeOptions compact_options;
-    compact_options.change_level = true;
-    compact_options.target_level = 0;
-    compact_options.bottommost_level_compaction =
-        rocksdb::BottommostLevelCompaction::kForce;
-    db_->CompactRange(compact_options, categorylinks_cf_, nullptr, nullptr);
+    run_compaction();
+}
+
+CategoryTreeIndexReader::CategoryTreeIndexReader(
+    const std::filesystem::path db_path)
+    : CategoryTreeIndex(db_path) {
+    run_compaction();
 }
 
 auto CategoryTreeIndexReader::search_categories(
@@ -459,6 +484,18 @@ auto CategoryTreeIndex::to_string(const CategoryLinkRecord &record)
                        "subcategories (nums) = {}, weight = {}",
                        record.pages(), subcat_names, record.subcategories(),
                        record.weight());
+}
+
+auto CategoryTreeIndex::count_rows() -> uint64_t {
+    uint64_t counter = 0;
+    rocksdb::Iterator *it =
+        db_->NewIterator(rocksdb::ReadOptions{}, categorylinks_cf_);
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        ++counter;
+        if (counter % 1'000'000 == 0)
+            LOG(INFO) << "Checked " << counter << " category link rows so far";
+    }
+    return counter;
 }
 
 } // namespace net_zelcon::wikidice
