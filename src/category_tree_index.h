@@ -5,6 +5,7 @@
 #include <absl/random/random.h>
 #include <absl/types/span.h>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -86,6 +87,8 @@ class CategoryTreeIndex {
     rocksdb::ColumnFamilyHandle *categorylinks_cf_;
     rocksdb::ColumnFamilyHandle *category_id_to_name_cf_;
 
+    CategoryTreeIndex() {}
+
   public:
     explicit CategoryTreeIndex(const std::filesystem::path db_path);
     virtual ~CategoryTreeIndex() {
@@ -102,13 +105,17 @@ class CategoryTreeIndex {
         column_family_handles_ = std::move(other.column_family_handles_);
         categorylinks_cf_ = other.categorylinks_cf_;
         other.categorylinks_cf_ = nullptr;
+        category_id_to_name_cf_ = other.category_id_to_name_cf_;
+        other.category_id_to_name_cf_ = nullptr;
     }
-    CategoryTreeIndex &operator=(CategoryTreeIndex &&other) {
+    virtual CategoryTreeIndex &operator=(CategoryTreeIndex &&other) {
         db_ = other.db_;
         other.db_ = nullptr;
         column_family_handles_ = std::move(other.column_family_handles_);
         categorylinks_cf_ = other.categorylinks_cf_;
         other.categorylinks_cf_ = nullptr;
+        category_id_to_name_cf_ = other.category_id_to_name_cf_;
+        other.category_id_to_name_cf_ = nullptr;
         return *this;
     }
 
@@ -119,7 +126,7 @@ class CategoryTreeIndex {
 
     auto to_string(const CategoryLinkRecord &) -> std::string;
 
-    auto count_rows() -> uint64_t;
+    virtual auto count_rows() -> uint64_t;
 
     void run_compaction();
 
@@ -167,8 +174,29 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
         const std::filesystem::path db_path,
         std::shared_ptr<CategoryTable> category_table, uint32_t n_threads);
 
-    CategoryTreeIndexWriter(CategoryTreeIndexWriter &&) = default;
-    CategoryTreeIndexWriter &operator=(CategoryTreeIndexWriter &&) = default;
+    CategoryTreeIndexWriter(CategoryTreeIndexWriter &&other) {
+        db_ = other.db_;
+        other.db_ = nullptr;
+        column_family_handles_ = std::move(other.column_family_handles_);
+        categorylinks_cf_ = other.categorylinks_cf_;
+        other.categorylinks_cf_ = nullptr;
+        category_id_to_name_cf_ = other.category_id_to_name_cf_;
+        other.category_id_to_name_cf_ = nullptr;
+        category_table_ = std::move(other.category_table_);
+        // categorylinks_count_ is atomic, so no need to copy it.
+        categorylinks_count_.store(other.categorylinks_count_.load());
+        other.categorylinks_count_.store(0);
+    }
+    CategoryTreeIndexWriter &operator=(CategoryTreeIndexWriter &&other) {
+        category_table_ = std::move(other.category_table_);
+        n_threads_ = other.n_threads_;
+        // categorylinks_count_ is atomic, so no need to copy it.
+        categorylinks_count_.store(other.categorylinks_count_.load());
+        other.categorylinks_count_.store(0);
+        return *this;
+    }
+
+    auto count_rows() -> uint64_t override;
 
   protected:
     auto
@@ -212,6 +240,7 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
   private:
     std::shared_ptr<CategoryTable> category_table_;
     uint32_t n_threads_;
+    std::atomic<uint64_t> categorylinks_count_;
 };
 
 class CategoryTreeIndexReader : public CategoryTreeIndex {
@@ -227,10 +256,6 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
         -> void;
 
     explicit CategoryTreeIndexReader(const std::filesystem::path db_path);
-
-    CategoryTreeIndexReader(CategoryTreeIndexReader &&) = default;
-
-    CategoryTreeIndexReader &operator=(CategoryTreeIndexReader &&) = default;
 };
 
 } // namespace net_zelcon::wikidice

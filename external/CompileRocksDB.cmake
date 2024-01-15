@@ -16,7 +16,8 @@ include(ExternalProject)
 # set(zstd_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/lib/libzstd.a)
 # set(zstd_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/external/zstd-1.5.5/lib)
 
-find_package(zstd REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZSTD REQUIRED IMPORTED_TARGET libzstd)
 
 set(RocksDB_CMAKE_ARGS
   -DUSE_RTTI=1
@@ -47,6 +48,6 @@ ExternalProject_Add(
 add_library(rocksdb-compiled INTERFACE)
 add_dependencies(rocksdb-compiled rocksdb)
 ExternalProject_Get_Property(rocksdb BINARY_DIR)
-target_link_libraries(rocksdb-compiled INTERFACE "${BINARY_DIR}/librocksdb.a" zstd)
+target_link_libraries(rocksdb-compiled INTERFACE "${BINARY_DIR}/librocksdb.a" PkgConfig::ZSTD)
 ExternalProject_Get_Property(rocksdb SOURCE_DIR)
 target_include_directories(rocksdb-compiled INTERFACE "${SOURCE_DIR}/include")

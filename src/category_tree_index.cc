@@ -225,6 +225,7 @@ void CategoryTreeIndexWriter::import_categorylinks_row(
         add_subcategory(row.category_name, row.page_id);
         break;
     }
+    categorylinks_count_ += 1;
 }
 
 void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
@@ -515,14 +516,26 @@ auto CategoryTreeIndex::to_string(const CategoryLinkRecord &record)
 
 auto CategoryTreeIndex::count_rows() -> uint64_t {
     uint64_t counter = 0;
-    rocksdb::Iterator *it =
-        db_->NewIterator(rocksdb::ReadOptions{}, categorylinks_cf_);
+    rocksdb::ReadOptions read_options;
+    // optimize read options for sequential reads
+    read_options.total_order_seek = true;
+    read_options.readahead_size = 10 * (1 << 20); // 10MiB
+    read_options.adaptive_readahead = true;
+    std::unique_ptr<rocksdb::Iterator> it{
+        db_->NewIterator(rocksdb::ReadOptions{}, categorylinks_cf_)};
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         ++counter;
         if (counter % 1'000'000 == 0)
             LOG(INFO) << "Checked " << counter << " category link rows so far";
     }
     return counter;
+}
+
+auto CategoryTreeIndexWriter::count_rows() -> uint64_t {
+    if (categorylinks_count_.load() > 0) {
+        return categorylinks_count_.load();
+    }
+    return CategoryTreeIndex::count_rows();
 }
 
 } // namespace net_zelcon::wikidice

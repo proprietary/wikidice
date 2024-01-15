@@ -230,7 +230,7 @@ target_link_libraries(
     sql_parser
     wikidice
     fmt::fmt Threads::Threads boost_headers
-    absl::flags absl::flags_usage absl::flags_parse
+    absl::flags absl::flags_parse
     absl::log absl::check absl::log_flags
 )
 
