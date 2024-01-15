@@ -419,6 +419,7 @@ auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
             // enqueue the subcategories of this category
             for (const auto &subcat : record->subcategories()) {
                 auto subcat_name = category_name_of(subcat);
+                CHECK(subcat_name.has_value());
                 categories_to_visit.push(subcat_name);
             }
         }

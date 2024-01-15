@@ -1,4 +1,5 @@
 #include "category_table.h"
+#include <algorithm>
 
 namespace net_zelcon::wikidice {
 
@@ -27,9 +28,7 @@ auto CategoryTable::find(const std::string_view category_name) const
 
 auto CategoryTable::for_each(
     std::function<void(const CategoryRow &)> callback) const -> void {
-    for (const auto &[_, category_row] : by_category_id_) {
-        callback(category_row);
-    }
+    std::for_each(by_category_id_.begin(), by_category_id_.end(), callback);
 }
 
 } // namespace net_zelcon::wikidice
