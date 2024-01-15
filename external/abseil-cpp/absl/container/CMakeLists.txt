@@ -177,6 +177,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::compressed_tuple
+    absl::config
     absl::core_headers
     absl::memory
     absl::span
@@ -449,6 +450,7 @@ absl_cc_test(
     ${ABSL_TEST_COPTS}
   DEPS
     absl::container_memory
+    absl::no_destructor
     absl::strings
     absl::test_instance_tracker
     absl::type_traits
@@ -502,6 +504,7 @@ absl_cc_library(
     absl::hash_policy_testing
     absl::memory
     absl::meta
+    absl::no_destructor
     absl::strings
   TESTONLY
 )

@@ -653,6 +653,23 @@ TEST(Table, InsertCollisionAndFindAfterDelete) {
   EXPECT_TRUE(t.empty());
 }
 
+TEST(Table, EraseInSmallTables) {
+  for (int64_t size = 0; size < 64; ++size) {
+    IntTable t;
+    for (int64_t i = 0; i < size; ++i) {
+      t.insert(i);
+    }
+    for (int64_t i = 0; i < size; ++i) {
+      t.erase(i);
+      EXPECT_EQ(t.size(), size - i - 1);
+      for (int64_t j = i + 1; j < size; ++j) {
+        EXPECT_THAT(*t.find(j), j);
+      }
+    }
+    EXPECT_TRUE(t.empty());
+  }
+}
+
 TEST(Table, InsertWithinCapacity) {
   IntTable t;
   t.reserve(10);
@@ -2201,10 +2218,10 @@ TEST(TableDeathTest, InvalidIteratorAsserts) {
   EXPECT_DEATH_IF_SUPPORTED(++iter, kErasedDeathMessage);
 }
 
-// Invalid iterator use can trigger heap-use-after-free in asan,
+// Invalid iterator use can trigger use-after-free in asan/hwasan,
 // use-of-uninitialized-value in msan, or invalidated iterator assertions.
 constexpr const char* kInvalidIteratorDeathMessage =
-    "heap-use-after-free|use-of-uninitialized-value|invalidated "
+    "use-after-free|use-of-uninitialized-value|invalidated "
     "iterator|Invalid iterator|invalid iterator";
 
 // MSVC doesn't support | in regex.
@@ -2562,7 +2579,7 @@ TEST(Table, InvalidReferenceUseCrashesWithSanitizers) {
     // ptr will become invalidated on rehash.
     const int64_t* ptr = &*t.begin();
     t.insert(++i);
-    EXPECT_DEATH_IF_SUPPORTED(std::cout << *ptr, "heap-use-after-free") << i;
+    EXPECT_DEATH_IF_SUPPORTED(std::cout << *ptr, "use-after-free") << i;
   }
 }
 

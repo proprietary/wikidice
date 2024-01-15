@@ -175,8 +175,6 @@ cc_library(
 
 cc_library(
     name = "core_headers",
-    srcs = [
-    ],
     hdrs = [
         "attributes.h",
         "const_init.h",
@@ -519,6 +517,7 @@ cc_library(
     deps = [
         ":base",
         ":base_internal",
+        ":no_destructor",
         ":raw_logging_internal",
         "//absl/synchronization",
         "@com_github_google_benchmark//:benchmark_main",
