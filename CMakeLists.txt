@@ -151,10 +151,11 @@ target_link_libraries(
     sql_parser
     PRIVATE
     bounded_string_ring
-    absl::log absl::check absl::flat_hash_map
+    absl::log absl::check
     fmt::fmt
     boost_headers
     PUBLIC
+    absl::flat_hash_map
     category_link_type
 )
 target_compile_features(
@@ -204,12 +205,12 @@ target_link_libraries(
     fmt::fmt Threads::Threads boost_headers
     absl::flags absl::flags_usage absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
-    absl::log absl::check absl::log_flags absl::log_sink
+    absl::log absl::check absl::log_flags absl::log_sink absl::absl_log
     absl::random_random absl::random_bit_gen_ref
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     absl::span
     msgpack-cxx
-    zstd
+    zstd::libzstd_static
     rocksdb-compiled
 )
 
@@ -230,9 +231,10 @@ target_link_libraries(
     wikidice_builder
     PUBLIC
     sql_parser
-    wikidice fmt::fmt Threads::Threads boost_headers
+    wikidice
+    fmt::fmt Threads::Threads boost_headers
     absl::flags absl::flags_usage absl::flags_parse
-    absl::log absl::check absl::log_flags absl::log_sink
+    absl::log absl::check absl::log_flags
 )
 
 # Python module

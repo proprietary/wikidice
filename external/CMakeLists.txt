@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.24)
 include(FetchContent)
 include(ExternalProject)
 
-#add_subdirectory(googletest-1.14.0)
 FetchContent_Declare(
     googletest
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/googletest-1.14.0
@@ -12,9 +11,16 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 # Abseil
-set(ABSL_PROPAGATE_CXX_STD ON)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(abseil-cpp)
+set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(ABSL_USE_GOOGLETEST_HEAD OFF CACHE BOOL "" FORCE)
+set(ABSL_CXX_STANDARD 20 CACHE STRING "" FORCE)
+set(CMAKE_CXX_STANDARD 20)
+set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    abseil-cpp
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/abseil-cpp
+)
+FetchContent_MakeAvailable(abseil-cpp)
 
 # fmt
 add_subdirectory(fmt-10.1.0)

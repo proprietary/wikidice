@@ -114,38 +114,39 @@ class CategoryTreeIndex {
 
     auto db() const noexcept -> rocksdb::DB * { return db_; }
 
-    auto get(std::string_view category_name)
-        -> std::optional<CategoryLinkRecord>;
+    auto
+    get(std::string_view category_name) -> std::optional<CategoryLinkRecord>;
 
     auto to_string(const CategoryLinkRecord &) -> std::string;
 
     auto count_rows() -> uint64_t;
 
   protected:
-    auto lookup_pages(std::string_view category_name)
-        -> std::vector<std::uint64_t>;
+    auto
+    lookup_pages(std::string_view category_name) -> std::vector<std::uint64_t>;
 
-    auto lookup_subcats(std::string_view category_name)
-        -> std::vector<std::string>;
+    auto
+    lookup_subcats(std::string_view category_name) -> std::vector<std::string>;
 
     auto lookup_weight(std::string_view category_name)
         -> std::optional<std::uint64_t>;
 
-    auto at_index(std::string_view category_name, std::uint64_t index)
-        -> std::uint64_t;
+    auto at_index(std::string_view category_name,
+                  std::uint64_t index) -> std::uint64_t;
 
-    virtual auto category_name_of(uint64_t category_id)
-        -> std::optional<std::string>;
+    virtual auto
+    category_name_of(uint64_t category_id) -> std::optional<std::string>;
 
     void run_compaction();
 
-    virtual auto categorylinks_cf_options() const
-        -> rocksdb::ColumnFamilyOptions;
+    virtual auto
+    categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions;
+
+    virtual auto db_options() const -> rocksdb::DBOptions;
 
     static constexpr size_t PREFIX_CAP_LEN = 8;
     static constexpr size_t BLOOM_FILTER_BITS_PER_KEY = 10;
 
-  private:
     /**
      * @brief Map a list of category IDs to their names.
      */
@@ -164,17 +165,19 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     explicit CategoryTreeIndexWriter(
         const std::filesystem::path db_path,
-        std::shared_ptr<CategoryTable> category_table);
+        std::shared_ptr<CategoryTable> category_table, uint32_t n_threads);
 
     CategoryTreeIndexWriter(CategoryTreeIndexWriter &&) = default;
     CategoryTreeIndexWriter &operator=(CategoryTreeIndexWriter &&) = default;
 
   protected:
-    auto categorylinks_cf_options() const
-        -> rocksdb::ColumnFamilyOptions override;
+    auto
+    categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions override;
 
-    auto category_name_of(uint64_t category_id)
-        -> std::optional<std::string> final;
+    auto db_options() const -> rocksdb::DBOptions override;
+
+    auto
+    category_name_of(uint64_t category_id) -> std::optional<std::string> final;
 
   private:
     void set(std::string_view category_name, const CategoryLinkRecord &);
@@ -208,12 +211,13 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
   private:
     std::shared_ptr<CategoryTable> category_table_;
+    uint32_t n_threads_;
 };
 
 class CategoryTreeIndexReader : public CategoryTreeIndex {
   public:
-    auto pick(std::string_view category_name, absl::BitGenRef random_generator)
-        -> std::optional<std::uint64_t>;
+    auto pick(std::string_view category_name,
+              absl::BitGenRef random_generator) -> std::optional<std::uint64_t>;
 
     auto search_categories(std::string_view category_name_prefix)
         -> std::vector<std::string>;

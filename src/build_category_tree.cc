@@ -6,6 +6,7 @@
 #include <absl/strings/str_cat.h>
 #include <absl/strings/string_view.h>
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fmt/core.h>
 #include <iostream>
@@ -55,21 +56,22 @@ auto read_category_table(const std::filesystem::path sqldump)
 
 auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
                               std::istream &table_stream, std::streamoff offset,
-                              int thread, bool skip_header = false) -> void {
+                              int thread, std::atomic<uint64_t> &counter,
+                              bool skip_header = false) -> void {
     CategoryLinksParser categorylinks_parser{table_stream};
     if (skip_header) {
         categorylinks_parser.skip_header();
     }
     if (offset != 0)
         categorylinks_parser.with_stop_at(offset);
-    uint64_t counter = 0;
     while (auto row = categorylinks_parser.next()) {
         dst.import_categorylinks_row(row.value());
-        if (++counter % 1'000'000 == 0)
+        auto count_result = counter.fetch_add(1);
+        if (count_result % 1'000'000 == 0)
             LOG(INFO) << fmt::format(
                 "Thread #{} ({}): Imported {:L} rows. Last imported row: "
                 "page_id={} (a {}) → category_name={}",
-                thread, this_thread_name(), counter, row->page_id,
+                thread, this_thread_name(), count_result, row->page_id,
                 to_string(row->page_type), row->category_name);
     }
 }
@@ -79,13 +81,15 @@ auto parallel_read_categorylinks_table(CategoryTreeIndexWriter &dst,
                                        uint32_t threads) -> void {
     auto offsets = SQLParser::split_offsets(sqldump, "categorylinks", threads);
     std::vector<std::thread> threads_running;
+    std::atomic<uint64_t> counter{0};
     for (uint32_t i = 0; i < offsets.size(); ++i) {
-        threads_running.emplace_back([&sqldump, &dst, &offsets, i]() {
+        threads_running.emplace_back([&sqldump, &dst, &offsets, i, &counter]() {
             LOG(INFO) << "Starting thread #" << i << "...";
             set_thread_name(fmt::format("thread #{}", i).c_str());
             std::ifstream stream{sqldump, std::ios::in};
             stream.seekg(std::get<0>(offsets[i]));
-            read_categorylinks_table(dst, stream, std::get<1>(offsets[i]), i);
+            read_categorylinks_table(dst, stream, std::get<1>(offsets[i]), i,
+                                     counter);
         });
     }
     for (auto &t : threads_running) {
@@ -115,7 +119,7 @@ int main(int argc, char *argv[]) {
         LOG(WARNING) << "Failed to set locale to en_US.UTF-8: " << e.what();
     }
     absl::SetProgramUsageMessage(
-        absl::StrCat("This program builds the initial database from Wikipedia "
+        absl::StrCat("This program builds the initial database from Wikipedia"
                      "SQL dumps. Sample usage:\n",
                      argv[0]));
     absl::ParseCommandLine(argc, argv);
@@ -131,8 +135,8 @@ int main(int argc, char *argv[]) {
         std::filesystem::path{absl::GetFlag(FLAGS_db_path)} /
         std::filesystem::path{absl::GetFlag(FLAGS_wikipedia_language_code)};
     {
-        CategoryTreeIndexWriter category_tree_index{db_destination_path,
-                                                    category_table};
+        CategoryTreeIndexWriter category_tree_index{
+            db_destination_path, category_table, absl::GetFlag(FLAGS_threads)};
         std::ifstream categorylinks_dump_stream{
             absl::GetFlag(FLAGS_categorylinks_dump)};
         LOG(INFO) << "Reading categorylinks table from "

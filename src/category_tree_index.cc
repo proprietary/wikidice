@@ -5,6 +5,7 @@
 #include <absl/log/log.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <iterator>
@@ -14,6 +15,8 @@
 #include <rocksdb/table.h>
 #include <span>
 #include <stdexcept>
+#include <thread>
+#include <unordered_set>
 
 namespace net_zelcon::wikidice {
 
@@ -23,16 +26,9 @@ auto CategoryTreeIndexWriter::categorylinks_cf_options() const
     // add merge operator to merge CategoryLinkRecords
     cf_options.merge_operator.reset(new CategoryLinkRecordMergeOperator);
     // set write buffer size
-    cf_options.write_buffer_size = 512 * (1 << 20);
-    cf_options.max_write_buffer_number = 8;
-    // enable Bloom filter for efficient prefix seek
-    rocksdb::BlockBasedTableOptions table_options;
-    table_options.filter_policy.reset(
-        rocksdb::NewRibbonFilterPolicy(BLOOM_FILTER_BITS_PER_KEY));
-    cf_options.table_factory.reset(
-        rocksdb::NewBlockBasedTableFactory(table_options));
-    cf_options.prefix_extractor.reset(
-        rocksdb::NewCappedPrefixTransform(PREFIX_CAP_LEN));
+    cf_options.write_buffer_size = 1 << 30; // 1GiB
+    cf_options.max_write_buffer_number =
+        n_threads_; // allow more concurrent writes
     return cf_options;
 }
 
@@ -58,6 +54,25 @@ auto CategoryTreeIndex::categorylinks_cf_options() const
     return cf_options;
 }
 
+auto CategoryTreeIndexWriter::db_options() const -> rocksdb::DBOptions {
+    rocksdb::DBOptions options;
+    options.create_if_missing = true;
+    options.create_missing_column_families = true;
+    options.error_if_exists = false;
+    options.max_open_files = 1000;
+    options.max_background_jobs = n_threads_;
+    return options;
+}
+
+auto CategoryTreeIndex::db_options() const -> rocksdb::DBOptions {
+    rocksdb::DBOptions options;
+    options.create_if_missing = true;
+    options.create_missing_column_families = true;
+    options.error_if_exists = false;
+    options.max_open_files = 1000;
+    return options;
+}
+
 auto CategoryTreeIndex::category_id_to_name_cf_options() const
     -> rocksdb::ColumnFamilyOptions {
     rocksdb::ColumnFamilyOptions cf_options;
@@ -80,11 +95,7 @@ CategoryTreeIndex::CategoryTreeIndex(const std::filesystem::path db_path) {
     column_families.emplace_back("category_id_to_name",
                                  category_id_to_name_cf_options());
     // setup database
-    rocksdb::DBOptions db_options;
-    db_options.create_if_missing = true;
-    db_options.create_missing_column_families = true;
-    db_options.error_if_exists = false;
-    db_options.max_open_files = 1000;
+    auto db_options = this->db_options();
     rocksdb::Status status =
         rocksdb::DB::Open(db_options, db_path.string(), column_families,
                           &column_family_handles_, &db_);
@@ -181,8 +192,9 @@ auto CategoryTreeIndex::get(std::string_view category_name)
 
 CategoryTreeIndexWriter::CategoryTreeIndexWriter(
     const std::filesystem::path db_path,
-    std::shared_ptr<CategoryTable> category_table)
-    : CategoryTreeIndex(db_path), category_table_{category_table} {
+    std::shared_ptr<CategoryTable> category_table, uint32_t n_threads)
+    : CategoryTreeIndex(db_path), category_table_{category_table},
+      n_threads_{n_threads} {
     category_table_->for_each(
         [this](const CategoryRow &row) { import_category_row(row); });
 }
@@ -356,16 +368,40 @@ void CategoryTreeIndexWriter::build_weights() {
     rocksdb::ReadOptions read_options;
     read_options.adaptive_readahead = true;
     read_options.total_order_seek = true; // ignore prefix Bloom filter in read
-    rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
-    uint64_t counter = 0;
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string_view category_name{it->key().data(), it->key().size()};
-        const std::uint64_t weight = compute_weight(category_name);
-        set_weight(category_name, weight);
-        if (++counter % 1'000'000)
-            LOG(INFO) << "Built weights for " << counter << " entries so far";
+    std::atomic<uint64_t> total_counter{0};
+    std::vector<std::thread> threads;
+    const uint64_t n_rows = count_rows();
+    const uint64_t n_rows_per_thread = n_rows / n_threads_;
+    LOG(INFO) << "Building weights for " << n_rows << " rows in " << n_threads_
+              << " threads...";
+    for (uint32_t i = 0; i < n_threads_; ++i) {
+        threads.emplace_back(
+            [this, i, n_rows_per_thread, read_options, &total_counter]() {
+                auto begin_at = i * n_rows_per_thread;
+                auto end_at = (i + 1) * n_rows_per_thread;
+                std::unique_ptr<rocksdb::Iterator> it{
+                    db_->NewIterator(read_options, categorylinks_cf_)};
+                uint64_t internal_counter = 0;
+                for (it->SeekToFirst();
+                     it->Valid() && internal_counter < begin_at; it->Next())
+                    internal_counter++;
+                for (; it->Valid() &&
+                       (i < (n_threads_ - 1) && internal_counter < end_at);
+                     it->Next(), ++internal_counter) {
+                    std::string_view category_name{it->key().data(),
+                                                   it->key().size()};
+                    const std::uint64_t weight = compute_weight(category_name);
+                    set_weight(category_name, weight);
+                    auto total_counter_result = total_counter.fetch_add(1);
+                    if (total_counter_result % 1'000'000 == 0)
+                        LOG(INFO) << "Built weights for "
+                                  << total_counter_result << " entries so far";
+                }
+                CHECK(it->status().ok()) << it->status().ToString();
+            });
     }
-    CHECK(it->status().ok()) << it->status().ToString();
+    for (auto &t : threads)
+        t.join();
 }
 
 auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
@@ -376,22 +412,29 @@ auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
                      << "not found in `categorylinks` column family";
         return weight;
     }
-    std::vector<std::string> categories_visited;
+    std::unordered_set<std::string> categories_visited;
     std::queue<std::string> categories_to_visit;
     categories_to_visit.emplace(category_name);
     float depth = 0.;
     while (!categories_to_visit.empty() && depth <= max_depth) {
         const auto top = categories_to_visit.front();
         categories_to_visit.pop();
-        if (std::ranges::find(categories_visited, top) !=
-            categories_visited.end())
+        if (categories_visited.contains(top))
             continue; // this prevents a cycle
-        categories_visited.push_back(top);
-        // add number of pages in this category to "weight"
-        weight += lookup_pages(top).size();
-        // enqueue the subcategories of this category
-        for (const auto &subcat : lookup_subcats(top))
-            categories_to_visit.push(subcat);
+        categories_visited.insert(top);
+        auto record = get(top);
+        CHECK(record.has_value());
+        if (record->weight() > 0) {
+            // this category has already been visited, so we can skip the
+            // expensive search because we have already computed its weight
+            weight += record->weight();
+        } else {
+            // add number of pages in this category to "weight"
+            weight += record->pages().size();
+            // enqueue the subcategories of this category
+            for (const auto &subcat : map_categories(record->subcategories()))
+                categories_to_visit.push(subcat);
+        }
         // increment depth
         depth += 1.0f;
     }
@@ -427,7 +470,8 @@ auto CategoryTreeIndexReader::search_categories(
         return autocompletions;
     rocksdb::ReadOptions read_options;
     read_options.auto_prefix_mode = true;
-    rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
+    std::unique_ptr<rocksdb::Iterator> it{
+        db_->NewIterator(read_options, categorylinks_cf_)};
     for (it->Seek(category_name_prefix);
          it->Valid() && it->key().starts_with(category_name_prefix) &&
          autocompletions.size() < MAX_AUTOCOMPLETIONS;
@@ -442,7 +486,8 @@ auto CategoryTreeIndexReader::for_each(
     -> void {
     rocksdb::ReadOptions read_options;
     read_options.total_order_seek = true;
-    rocksdb::Iterator *it = db_->NewIterator(read_options, categorylinks_cf_);
+    std::unique_ptr<rocksdb::Iterator> it{
+        db_->NewIterator(read_options, categorylinks_cf_)};
     CategoryLinkRecord record{};
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string_view category_name{it->key().data(), it->key().size()};
