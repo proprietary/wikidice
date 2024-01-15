@@ -417,8 +417,10 @@ auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
             // add number of pages in this category to "weight"
             weight += record->pages().size();
             // enqueue the subcategories of this category
-            for (const auto &subcat : map_categories(record->subcategories()))
-                categories_to_visit.push(subcat);
+            for (const auto &subcat : record->subcategories()) {
+                auto subcat_name = category_name_of(subcat);
+                categories_to_visit.push(subcat_name);
+            }
         }
         // increment depth
         depth += 1.0f;
