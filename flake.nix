@@ -33,7 +33,6 @@
 
         # Build time and Run time dependencies
         zstd
-        gtest
       ];
 
       # Setting up the environment variables you need during

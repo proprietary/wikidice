@@ -4,6 +4,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "Do not build in-source. Please remove CMakeCache.txt and the CMakeFiles/ directory. Then build out-of-source.")
 endif()
 
+set(CMAKE_C_COMPILER clang)
+set(CMAKE_CXX_COMPILER clang++)
+
 # Put the project early since modules might need to detect the compiler.
 # More information https://cmake.org/cmake/help/latest/command/project.html
 project(
@@ -39,7 +42,7 @@ include(Coverage)
 
 find_package(Threads REQUIRED)
 find_package(Python 3.11 COMPONENTS Interpreter Development REQUIRED)
-find_package(gtest REQUIRED)
+find_package(zstd REQUIRED)
 
 # External dependencies
 add_subdirectory(external)
@@ -169,10 +172,13 @@ target_compile_options(
 add_library(wikidice STATIC)
 target_sources(
     wikidice
-    PUBLIC
+    PRIVATE
     src/category_table.h src/category_table.cc
     src/category_tree_index.h src/category_tree_index.cc
     src/wikidice_query.h src/wikidice_query.cc
+    PUBLIC
+    src/category_tree_index.h
+    src/wikidice_query.h
 )
 target_compile_features(
     wikidice
@@ -203,6 +209,7 @@ target_link_libraries(
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     absl::span
     msgpack-cxx
+    zstd
     rocksdb-compiled
 )
 
