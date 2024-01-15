@@ -1,18 +1,20 @@
 include(FetchContent)
 include(ExternalProject)
 
-set(ZSTD_BUILD_STATIC ON)
-set(ZSTD_BUILD_SHARED OFF)
-set(ZSTD_BUILD_PROGRAMS OFF)
-set(ZSTD_BUILD_TESTS OFF)
-set(ZSTD_LEGACY_SUPPORT OFF)
-FetchContent_Declare(
-  zstd
-  SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/zstd-1.5.5"
-  SOURCE_SUBDIR build/cmake
-  OVERRIDE_FIND_PACKAGE
-)
-FetchContent_MakeAvailable(zstd)
+# set(ZSTD_BUILD_STATIC ON)
+# set(ZSTD_BUILD_SHARED OFF)
+# set(ZSTD_BUILD_PROGRAMS OFF)
+# set(ZSTD_BUILD_TESTS OFF)
+# set(ZSTD_LEGACY_SUPPORT OFF)
+# FetchContent_Declare(
+#   zstd
+#   SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/zstd-1.5.5"
+#   SOURCE_SUBDIR build/cmake
+#   OVERRIDE_FIND_PACKAGE
+# )
+# FetchContent_MakeAvailable(zstd)
+# set(zstd_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/lib/libzstd.a)
+# set(zstd_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/external/zstd-1.5.5/lib)
 
 find_package(zstd REQUIRED)
 
@@ -31,7 +33,7 @@ set(RocksDB_CMAKE_ARGS
   -DWITH_ZSTD=ON
   -DROCKSDB_BUILD_SHARED=OFF
   -DCMAKE_POSITION_INDEPENDENT_CODE=True
-  -DCMAKE_CXX_FLAGS="-DZSTD_STATIC_LINKING_ONLY"
+  #-DCMAKE_CXX_FLAGS="-DZSTD_STATIC_LINKING_ONLY"
 )
 ExternalProject_Add(
   rocksdb
@@ -45,6 +47,6 @@ ExternalProject_Add(
 add_library(rocksdb-compiled INTERFACE)
 add_dependencies(rocksdb-compiled rocksdb)
 ExternalProject_Get_Property(rocksdb BINARY_DIR)
-target_link_libraries(rocksdb-compiled INTERFACE "${BINARY_DIR}/librocksdb.a")
+target_link_libraries(rocksdb-compiled INTERFACE "${BINARY_DIR}/librocksdb.a" zstd)
 ExternalProject_Get_Property(rocksdb SOURCE_DIR)
 target_include_directories(rocksdb-compiled INTERFACE "${SOURCE_DIR}/include")

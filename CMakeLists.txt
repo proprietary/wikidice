@@ -46,8 +46,6 @@ find_package(Python 3.11 COMPONENTS Interpreter Development REQUIRED)
 # External dependencies
 add_subdirectory(external)
 
-find_package(zstd REQUIRED)
-
 # It is always easier to navigate in an IDE when projects are organized in folders.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -210,7 +208,6 @@ target_link_libraries(
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     absl::span
     msgpack-cxx
-    libzstd_static
     rocksdb-compiled
 )
 
