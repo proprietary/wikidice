@@ -32,7 +32,6 @@
         cppcheck
 
         # Build time and Run time dependencies
-        zstd
       ];
 
       # Setting up the environment variables you need during
