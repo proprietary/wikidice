@@ -203,7 +203,7 @@ target_link_libraries(
     primitive_serializer
     category_link_type
     fmt::fmt Threads::Threads boost_headers
-    absl::flags absl::flags_usage absl::flags_parse
+    absl::flags absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map
     absl::log absl::check absl::log_flags absl::log_sink absl::absl_log
     absl::random_random absl::random_bit_gen_ref

@@ -153,6 +153,7 @@ int main(int argc, char *argv[]) {
     }
     LOG(INFO) << "Compressing database to ready it for reads...";
     CategoryTreeIndexReader category_tree_index_reader{db_destination_path};
+    category_tree_index_reader.run_compaction();
     const auto rows = category_tree_index_reader.count_rows();
     LOG(INFO) << "Built database with " << rows << " rows.";
     return 0;

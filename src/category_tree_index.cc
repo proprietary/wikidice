@@ -214,14 +214,6 @@ auto CategoryTreeIndexWriter::set(std::string_view category_name,
 
 void CategoryTreeIndexWriter::import_categorylinks_row(
     const CategoryLinksRow &row) {
-    const auto category_row = category_table_->find(row.category_name);
-    if (!category_row) {
-        LOG(WARNING)
-            << "category_name: " << row.category_name
-            << " not found in `category` table, yet this category_name is a "
-               "category according to the `categorylinks` table";
-        return;
-    }
     switch (row.page_type) {
     case CategoryLinkType::FILE:
         // ignore; we are not indexing files
@@ -230,7 +222,7 @@ void CategoryTreeIndexWriter::import_categorylinks_row(
         add_page(row.category_name, row.page_id);
         break;
     case CategoryLinkType::SUBCAT:
-        add_subcategory(row.category_name, category_row->category_name);
+        add_subcategory(row.category_name, row.page_id);
         break;
     }
 }
@@ -249,17 +241,9 @@ void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
 }
 
 void CategoryTreeIndexWriter::add_subcategory(
-    const std::string_view category_name,
-    const std::string_view subcategory_name) {
+    const std::string_view category_name, const uint64_t subcategory_page_id) {
     CategoryLinkRecord new_record{};
-    const auto subcategory_details = category_table_->find(subcategory_name);
-    if (!subcategory_details) {
-        LOG(ERROR) << "In-memory table mapping category names to category IDs "
-                      "is missing: "
-                   << std::quoted(subcategory_name);
-        return;
-    }
-    new_record.subcategories_mut().push_back(subcategory_details->category_id);
+    new_record.subcategories_mut().push_back(subcategory_page_id);
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
@@ -457,9 +441,7 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
 
 CategoryTreeIndexReader::CategoryTreeIndexReader(
     const std::filesystem::path db_path)
-    : CategoryTreeIndex(db_path) {
-    run_compaction();
-}
+    : CategoryTreeIndex(db_path) {}
 
 auto CategoryTreeIndexReader::search_categories(
     std::string_view category_name_prefix) -> std::vector<std::string> {

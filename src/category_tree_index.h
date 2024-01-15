@@ -121,6 +121,8 @@ class CategoryTreeIndex {
 
     auto count_rows() -> uint64_t;
 
+    void run_compaction();
+
   protected:
     auto
     lookup_pages(std::string_view category_name) -> std::vector<std::uint64_t>;
@@ -136,8 +138,6 @@ class CategoryTreeIndex {
 
     virtual auto
     category_name_of(uint64_t category_id) -> std::optional<std::string>;
-
-    void run_compaction();
 
     virtual auto
     categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions;
@@ -183,7 +183,7 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
     void set(std::string_view category_name, const CategoryLinkRecord &);
 
     void add_subcategory(const std::string_view category_name,
-                         const std::string_view subcategory_name);
+                         const uint64_t subcategory_page_id);
 
     void add_page(const std::string_view category_name,
                   const std::uint64_t page_id);
