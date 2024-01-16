@@ -175,6 +175,9 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     void import_categorylinks_rows(const std::vector<CategoryLinksRow> &);
 
+    void
+    import_categorylinks_rows(const std::vector<const CategoryLinksRow *> &);
+
     void import_category_row(const CategoryRow &);
 
     void run_second_pass();

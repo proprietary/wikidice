@@ -61,7 +61,7 @@ auto CategoryTreeIndexWriter::db_options() const -> rocksdb::DBOptions {
     rocksdb::DBOptions options;
     options.create_if_missing = true;
     options.create_missing_column_families = true;
-    options.error_if_exists = false;
+    options.error_if_exists = true;
     options.max_open_files = 1000;
     options.max_background_jobs = n_threads_;
     options.IncreaseParallelism(n_threads_);
@@ -230,20 +230,20 @@ void CategoryTreeIndexWriter::import_categorylinks_row(
 }
 
 void CategoryTreeIndexWriter::import_categorylinks_rows(
-    const std::vector<CategoryLinksRow> &rows) {
+    const std::vector<const CategoryLinksRow *> &rows) {
     rocksdb::WriteBatch batch;
     for (const auto &row : rows) {
-        switch (row.page_type) {
+        switch (row->page_type) {
         case CategoryLinkType::FILE:
             // ignore; we are not indexing files
             break;
         case CategoryLinkType::PAGE:
-            add_page(batch, row.category_name, row.page_id);
+            add_page(batch, row->category_name, row->page_id);
             break;
         case CategoryLinkType::SUBCAT: {
-            auto subcategory_id = page_id_to_category_id(row.page_id);
+            auto subcategory_id = page_id_to_category_id(row->page_id);
             if (subcategory_id)
-                add_subcategory(batch, row.category_name,
+                add_subcategory(batch, row->category_name,
                                 subcategory_id.value());
             break;
         }
@@ -254,6 +254,17 @@ void CategoryTreeIndexWriter::import_categorylinks_rows(
     CHECK(status.ok()) << "Batch write of category link rows failed: "
                        << status.ToString();
     categorylinks_count_ += rows.size();
+}
+
+void CategoryTreeIndexWriter::import_categorylinks_rows(
+    const std::vector<CategoryLinksRow> &rows) {
+    std::vector<const CategoryLinksRow *> ptrs;
+    ptrs.reserve(rows.size());
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const CategoryLinksRow *row = &rows[i];
+        ptrs.push_back(row);
+    }
+    import_categorylinks_rows(ptrs);
 }
 
 void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {

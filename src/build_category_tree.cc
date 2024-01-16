@@ -68,31 +68,27 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
               << n_threads << " threads...";
     std::atomic<bool> done{false};
     constexpr static size_t kBatchSize = 1'000'000;
-    boost::lockfree::queue<CategoryLinksRow *> queue{kBatchSize * 2};
+    MPSCBlockingQueue<CategoryLinksRow *> queue{kBatchSize * 2};
     std::thread consumer_thread([&dst, &queue, &done]() {
         uint64_t counter = 0;
-        std::vector<CategoryLinksRow> batch;
+        std::vector<const CategoryLinksRow *> batch;
         batch.reserve(kBatchSize);
-        CategoryLinksRow *t = nullptr;
         while (!done) {
-            while (queue.pop(t)) {
-                batch.emplace_back(*t);
-                if (t != nullptr) {
-                    delete t;
-                    t = nullptr;
+            CategoryLinksRow *t = queue.pop();
+            batch.push_back(t);
+            if (batch.size() >= kBatchSize) {
+                dst.import_categorylinks_rows(batch);
+                // Report progress
+                counter += batch.size();
+                LOG_IF(INFO, counter % 1'000'000 == 0)
+                    << "Imported " << counter << " rows."
+                    << " Last imported row: page_id=" << batch.back()->page_id
+                    << " (a " << to_string(batch.back()->page_type)
+                    << ") → category_name=" << batch.back()->category_name;
+                for (auto &p : batch) {
+                    delete p;
                 }
-                if (batch.size() >= kBatchSize) {
-                    dst.import_categorylinks_rows(batch);
-                    // Report progress
-                    counter += batch.size();
-                    LOG_IF(INFO, counter % 1'000'000 == 0)
-                        << "Imported " << counter << " rows."
-                        << " Last imported row: page_id="
-                        << batch.back().page_id << " (a "
-                        << to_string(batch.back().page_type)
-                        << ") → category_name=" << batch.back().category_name;
-                    batch.clear();
-                }
+                batch.clear();
             }
         }
     });

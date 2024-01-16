@@ -81,36 +81,36 @@ std::vector<std::string_view> WIKIPEDIA_LANGUAGE_CODES{
 
 auto is_valid_language(std::string_view language) -> bool;
 
-template <typename T> class MPSCQueue {
+template <typename T> class MPSCBlockingQueue {
   private:
-    std::queue<std::optional<T>> queue_;
+    std::queue<T> queue_;
     std::mutex m_;
     std::condition_variable cv_;
+    size_t capacity_;
 
   public:
+    MPSCBlockingQueue(size_t capacity) : capacity_{capacity} {}
+
     void push(const T &data) {
         std::unique_lock<std::mutex> lock{m_};
+        cv_.wait(lock, [&]() { return queue_.size() < capacity_; });
         queue_.push(data);
-        cv_.notify_one();
-    }
-
-    void close() {
-        std::unique_lock<std::mutex> lock{m_};
-        queue_.push(std::nullopt);
         cv_.notify_one();
     }
 
     void emplace(T &&data) {
         std::unique_lock<std::mutex> lock{m_};
+        cv_.wait(lock, [this]() { return queue_.size() < capacity_; });
         queue_.emplace(std::move(data));
         cv_.notify_one();
     }
 
-    auto pop() -> std::optional<T> {
+    auto pop() -> T {
         std::unique_lock<std::mutex> lock{m_};
         cv_.wait(lock, [this]() { return !queue_.empty(); });
-        std::optional<T> data = queue_.front();
+        T data = queue_.front();
         queue_.pop();
+        cv_.notify_all();
         return data;
     }
 };
