@@ -1,5 +1,9 @@
 #pragma once
 
+#include <condition_variable>
+#include <mutex>
+#include <optional>
+#include <queue>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -76,5 +80,42 @@ std::vector<std::string_view> WIKIPEDIA_LANGUAGE_CODES{
     "gcr"sv,     "zh-yue"sv,  "zh-min-nan"sv};
 
 auto is_valid_language(std::string_view language) -> bool;
+
+template <typename T> class MPSCQueue {
+  private:
+    std::queue<T> queue_;
+    std::mutex m_;
+    std::condition_variable cv_;
+    bool killed_ = false;
+
+  public:
+    void push(const T &data) {
+        std::unique_lock<std::mutex> lock{m_};
+        queue_.push(data);
+        cv_.notify_one();
+    }
+
+    void emplace(T &&data) {
+        std::unique_lock<std::mutex> lock{m_};
+        queue_.emplace(std::move(data));
+        cv_.notify_one();
+    }
+
+    auto pop() -> std::optional<T> {
+        std::unique_lock<std::mutex> lock{m_};
+        cv_.wait(lock, [this]() { return !queue_.empty() || killed_; });
+        if (queue_.empty())
+            return std::nullopt;
+        T data = queue_.front();
+        queue_.pop();
+        return data;
+    }
+
+    void kill() {
+        std::unique_lock<std::mutex> lock{m_};
+        killed_ = true;
+        cv_.notify_all();
+    }
+};
 
 } // namespace net_zelcon::wikidice
