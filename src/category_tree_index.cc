@@ -29,6 +29,8 @@ auto CategoryTreeIndexWriter::categorylinks_cf_options() const
     cf_options.write_buffer_size = 1 << 30; // 1GiB
     cf_options.max_write_buffer_number =
         n_threads_; // allow more concurrent writes
+    // optimizations for write-heavy workload
+    cf_options.OptimizeLevelStyleCompaction();
     return cf_options;
 }
 
@@ -61,6 +63,7 @@ auto CategoryTreeIndexWriter::db_options() const -> rocksdb::DBOptions {
     options.error_if_exists = false;
     options.max_open_files = 1000;
     options.max_background_jobs = n_threads_;
+    options.IncreaseParallelism(n_threads_);
     return options;
 }
 
@@ -218,24 +221,35 @@ auto CategoryTreeIndexWriter::set(std::string_view category_name,
 
 void CategoryTreeIndexWriter::import_categorylinks_row(
     const CategoryLinksRow &row) {
-    switch (row.page_type) {
-    case CategoryLinkType::FILE:
-        // ignore; we are not indexing files
-        break;
-    case CategoryLinkType::PAGE:
-        add_page(row.category_name, row.page_id);
-        break;
-    case CategoryLinkType::SUBCAT: {
-        auto subcategory_id = page_id_to_category_id(row.page_id);
-        CHECK(subcategory_id.has_value())
-            << "Failed to find category ID corresponding to "
-               "page id: "
-            << row.page_id;
-        add_subcategory(row.category_name, subcategory_id.value());
-        break;
+    std::vector<CategoryLinksRow> rows{row};
+    import_categorylinks_rows(rows);
+}
+
+void CategoryTreeIndexWriter::import_categorylinks_rows(
+    const std::vector<CategoryLinksRow> &rows) {
+    rocksdb::WriteBatch batch;
+    for (const auto &row : rows) {
+        switch (row.page_type) {
+        case CategoryLinkType::FILE:
+            // ignore; we are not indexing files
+            break;
+        case CategoryLinkType::PAGE:
+            add_page(batch, row.category_name, row.page_id);
+            break;
+        case CategoryLinkType::SUBCAT: {
+            auto subcategory_id = page_id_to_category_id(row.page_id);
+            if (subcategory_id)
+                add_subcategory(batch, row.category_name,
+                                subcategory_id.value());
+            break;
+        }
+        }
     }
-    }
-    categorylinks_count_ += 1;
+    rocksdb::WriteOptions write_options;
+    auto status = db_->Write(write_options, &batch);
+    CHECK(status.ok()) << "Batch write of category link rows failed: "
+                       << status.ToString();
+    categorylinks_count_ += rows.size();
 }
 
 void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
@@ -252,28 +266,26 @@ void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
 }
 
 void CategoryTreeIndexWriter::add_subcategory(
-    const std::string_view category_name, const CategoryId subcategory_id) {
+    rocksdb::WriteBatch &batch, const std::string_view category_name,
+    const CategoryId subcategory_id) {
     CategoryLinkRecord new_record{};
     new_record.subcategories_mut().push_back(subcategory_id);
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
-    rocksdb::WriteOptions write_options;
-    auto status =
-        db_->Merge(write_options, categorylinks_cf_, category_name, value);
+    auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
-void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
+void CategoryTreeIndexWriter::add_page(rocksdb::WriteBatch &batch,
+                                       const std::string_view category_name,
                                        const PageId page_id) {
     CategoryLinkRecord new_record{};
     new_record.pages_mut().push_back(page_id);
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
-    rocksdb::WriteOptions write_options;
-    auto status =
-        db_->Merge(write_options, categorylinks_cf_, category_name, value);
+    auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 

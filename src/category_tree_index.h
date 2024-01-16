@@ -14,6 +14,7 @@
 #include <msgpack.hpp>
 #include <rocksdb/db.h>
 #include <rocksdb/merge_operator.h>
+#include <rocksdb/write_batch.h>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -172,6 +173,8 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
   public:
     void import_categorylinks_row(const CategoryLinksRow &);
 
+    void import_categorylinks_rows(const std::vector<CategoryLinksRow> &);
+
     void import_category_row(const CategoryRow &);
 
     void run_second_pass();
@@ -217,10 +220,12 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
   private:
     void set(std::string_view category_name, const CategoryLinkRecord &);
 
-    void add_subcategory(const std::string_view category_name,
+    void add_subcategory(rocksdb::WriteBatch &,
+                         const std::string_view category_name,
                          const CategoryId subcategory_id);
 
-    void add_page(const std::string_view category_name, const PageId page_id);
+    void add_page(rocksdb::WriteBatch &, const std::string_view category_name,
+                  const PageId page_id);
 
     void set_weight(const std::string_view category_name,
                     const std::uint64_t weight);

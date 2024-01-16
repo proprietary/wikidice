@@ -50,12 +50,10 @@ auto read_category_table(const std::filesystem::path sqldump)
     category_parser.skip_header();
     while (auto row = category_parser.next()) {
         category_table->add_category(row.value());
-        if (++counter % 100'000 == 0) {
-            LOG(INFO) << fmt::format("Read {} categories...", counter);
-            LOG(INFO) << fmt::format("Last category: name={}, id={}",
-                                     row.value().category_name,
-                                     row->category_id);
-        }
+        LOG_IF(INFO, counter % 100'000 == 0)
+            << "Read " << counter
+            << " categories. Last category: name=" << row.value().category_name
+            << ", id=" << row->category_id;
     }
     return category_table;
 }
@@ -73,16 +71,32 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
         auto &parser = partitions[i].first;
         threads_running.emplace_back([&dst, &parser, i, &counter]() {
             LOG(INFO) << "Starting thread #" << i << "...";
+            static constexpr size_t batch_size = 100'000ULL;
+            std::vector<CategoryLinksRow> batch;
+            batch.reserve(batch_size);
             while (std::optional<CategoryLinksRow> row = parser.next()) {
-                dst.import_categorylinks_row(row.value());
+                // Enqueue row to write batch
+                batch.emplace_back(row.value());
+
+                // Report progress
                 auto count_result = counter.fetch_add(1);
-                if (count_result % 1'000'000 == 0) {
-                    LOG(INFO) << "Thread #" << i << " imported " << count_result
-                              << " rows."
-                              << " Last imported row: page_id=" << row->page_id
-                              << " (a " << to_string(row->page_type)
-                              << ") → category_name=" << row->category_name;
+                LOG_IF(INFO, count_result % 1'000'000 == 0)
+                    << "Thread #" << i << " imported " << count_result
+                    << " rows."
+                    << " Last imported row: page_id=" << batch.back().page_id
+                    << " (a " << to_string(batch.back().page_type)
+                    << ") → category_name=" << batch.back().category_name;
+
+                // Actualy insert batch into database if necessary
+                if (batch.size() >= batch_size) {
+                    DLOG(INFO) << "Thread #" << i << " importing batch of "
+                               << batch.size() << " rows...";
+                    dst.import_categorylinks_rows(batch);
+                    batch.clear();
                 }
+            }
+            if (!batch.empty()) {
+                dst.import_categorylinks_rows(batch);
             }
         });
     }
@@ -106,12 +120,11 @@ auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
             while (std::optional<PageTableRow> row = parser.next()) {
                 dst->add_page(row.value());
                 auto count_result = counter.fetch_add(1);
-                if (count_result % 1'000'000 == 0) {
-                    LOG(INFO) << "Thread #" << i << " imported " << count_result
-                              << " rows."
-                              << " Last imported row: page_id=" << row->page_id
-                              << " → page_title=" << row->page_title;
-                }
+                LOG_IF(INFO, count_result % 1'000'000 == 0)
+                    << "Thread #" << i << " imported " << count_result
+                    << " rows."
+                    << " Last imported row: page_id=" << row->page_id
+                    << " → page_title=" << row->page_title;
             }
         });
     }
