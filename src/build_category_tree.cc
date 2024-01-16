@@ -69,10 +69,10 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
     SQLDumpParallelProcessor<CategoryLinksParser> parallel_processor(
         categorylinks_dump);
     parallel_processor.set_parallelism(n_threads);
-    parallel_processor([&dst, &counter,
-                        &thread_num](CategoryLinksParser &parser) {
-        LOG(INFO) << "Starting thread #" << thread_num.fetch_add(1) << "...";
-        static constexpr size_t batch_size = 10'000ULL;
+    parallel_processor([&dst, &counter, nth_thread = thread_num.fetch_add(1)](
+                           CategoryLinksParser &parser) {
+        LOG(INFO) << "Starting thread #" << nth_thread << "...";
+        static constexpr size_t batch_size = 1'000'000ULL;
         std::vector<CategoryLinksRow> batch;
         batch.reserve(batch_size);
         while (std::optional<CategoryLinksRow> row = parser.next()) {
@@ -82,7 +82,7 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
             // Report progress
             auto count_result = counter.fetch_add(1);
             LOG_IF(INFO, count_result % 1'000'000 == 0)
-                << "Thread #" << thread_num << " imported " << count_result
+                << "Thread #" << nth_thread << " imported " << count_result
                 << " rows."
                 << " Last imported row: page_id=" << batch.back().page_id
                 << " (a " << to_string(batch.back().page_type)
@@ -90,7 +90,7 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
 
             // Actualy insert batch into database if necessary
             if (batch.size() >= batch_size) {
-                DLOG(INFO) << "Thread #" << thread_num << " importing batch of "
+                DLOG(INFO) << "Thread #" << nth_thread << " importing batch of "
                            << batch.size() << " rows...";
                 dst.import_categorylinks_rows(batch);
                 batch.clear();

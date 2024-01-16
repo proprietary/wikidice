@@ -27,10 +27,11 @@ auto CategoryTreeIndexWriter::categorylinks_cf_options() const
     cf_options.merge_operator.reset(new CategoryLinkRecordMergeOperator);
     // set write buffer size
     cf_options.write_buffer_size = 1 << 30; // 1GiB
+    // optimizations for write-heavy workload
     cf_options.max_write_buffer_number =
         n_threads_; // allow more concurrent writes
-    // optimizations for write-heavy workload
-    cf_options.OptimizeLevelStyleCompaction();
+                    // disable automatic compaction
+    cf_options.disable_auto_compactions = true;
     return cf_options;
 }
 
@@ -64,6 +65,7 @@ auto CategoryTreeIndexWriter::db_options() const -> rocksdb::DBOptions {
     options.max_open_files = 1000;
     options.max_background_jobs = n_threads_;
     options.IncreaseParallelism(n_threads_);
+    options.max_subcompactions = n_threads_;
     return options;
 }
 
@@ -204,6 +206,8 @@ CategoryTreeIndexWriter::CategoryTreeIndexWriter(
       wiki_page_table_{wiki_page_table}, n_threads_{n_threads} {
     category_table_->for_each(
         [this](const CategoryRow &row) { import_category_row(row); });
+    db_->CompactRange(rocksdb::CompactRangeOptions{}, category_id_to_name_cf_,
+                      nullptr, nullptr);
 }
 
 auto CategoryTreeIndexWriter::set(std::string_view category_name,
@@ -250,6 +254,9 @@ void CategoryTreeIndexWriter::import_categorylinks_rows(
     CHECK(status.ok()) << "Batch write of category link rows failed: "
                        << status.ToString();
     categorylinks_count_ += rows.size();
+    if (categorylinks_count_ % 10'000'000 == 0)
+        db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
+                          nullptr, nullptr);
 }
 
 void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
