@@ -50,7 +50,7 @@ auto read_category_table(const std::filesystem::path sqldump)
     category_parser.skip_header();
     while (auto row = category_parser.next()) {
         category_table->add_category(row.value());
-        LOG_IF(INFO, counter % 100'000 == 0)
+        LOG_IF(INFO, ++counter % 100'000 == 0)
             << "Read " << counter
             << " categories. Last category: name=" << row.value().category_name
             << ", id=" << row->category_id;
