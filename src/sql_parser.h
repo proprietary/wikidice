@@ -151,16 +151,14 @@ class SQLDumpParallelProcessor {
     auto make_parallel()
         -> std::vector<std::unique_ptr<file_utils::FilePortionStream>> {
         using file_utils::FilePortionStream;
-        CHECK(std::filesystem::is_regular_file(sqldump_));
         std::ifstream ps{sqldump_, std::ios::in};
         SQLParserType p{ps};
         auto offsets = p.split_offsets(n_threads_);
         std::vector<std::unique_ptr<FilePortionStream>> dst;
         for (std::size_t i = 0; i < offsets.size(); ++i) {
-            auto stream = std::make_unique<FilePortionStream>(
-                FilePortionStream::open(sqldump_, std::get<0>(offsets[i]),
-                                        std::get<1>(offsets[i])));
-            dst.emplace_back(std::move(stream));
+            auto &[begin, end] = offsets[i];
+            dst.emplace_back(std::make_unique<FilePortionStream>(
+                FilePortionStream::open(sqldump_, begin, end)));
         }
         return dst;
     }
@@ -171,6 +169,7 @@ class SQLDumpParallelProcessor {
         : sqldump_{sqldump}, table_name_{SQLParserType::table_name},
           n_threads_{n_threads} {
         CHECK_GT(n_threads, 0U);
+        CHECK(std::filesystem::is_regular_file(sqldump_));
     }
 
     explicit SQLDumpParallelProcessor(const std::filesystem::path &sqldump)
@@ -185,14 +184,14 @@ class SQLDumpParallelProcessor {
     template <typename Fn> auto operator()(Fn &&fn) -> void {
         auto streams = make_parallel();
         std::vector<std::thread> threads;
-        uint32_t thread_num = 0;
-        for (auto &stream : streams) {
-            SQLParserType parser{*stream};
-            threads.emplace_back([&parser, &fn, thread_num]() {
+        for (uint32_t thread_num = 0; thread_num < streams.size();
+             ++thread_num) {
+            threads.emplace_back([&streams, thread_num, &fn]() {
                 LOG(INFO) << "Starting thread #" << thread_num << "...";
+                std::istream &stream = *streams[thread_num];
+                SQLParserType parser{stream};
                 fn(parser);
             });
-            thread_num++;
         }
         for (auto &t : threads)
             t.join();
