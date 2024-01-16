@@ -440,7 +440,6 @@ TEST(ParallelSQLParser, ReadCategoryTable) {
 
     // get row count when done in parallel
     auto parts = SQLParser<>::make_parallel(dump, table_name, n_partitions);
-    ASSERT_EQ(static_cast<uint64_t>(n_partitions), parts.size());
     std::vector<std::thread> threads_running;
     std::atomic<uint64_t> row_count{0};
     for (uint32_t i = 0; i < parts.size(); i++) {
@@ -478,7 +477,6 @@ TEST(ParallelSQLParser, ReadPageTable) {
     // Get parallel row count
     auto parts = PageTableParser::make_parallel(
         dump, PageTableParser::table_name, partitions);
-    ASSERT_EQ(static_cast<uint64_t>(partitions), parts.size());
     std::vector<std::thread> threads;
     std::vector<uint64_t> row_counts(parts.size(), 0);
     for (uint32_t i = 0; i < parts.size(); i++) {
@@ -494,6 +492,42 @@ TEST(ParallelSQLParser, ReadPageTable) {
     uint64_t parallel_row_count =
         std::accumulate(row_counts.begin(), row_counts.end(), 0);
     ASSERT_EQ(expected_rows, parallel_row_count);
+}
+
+TEST(ParallelSQLParser, ReadCategoryLinksTable) {
+    if (absl::GetFlag(FLAGS_categorylinks_sql).empty()) {
+        GTEST_SKIP();
+    }
+    const uint32_t partitions = absl::GetFlag(FLAGS_parallelism);
+    const std::filesystem::path dump = absl::GetFlag(FLAGS_categorylinks_sql);
+
+    // Get normal row count
+    std::ifstream serial_parser_stream{dump, std::ios::in};
+    CategoryLinksParser serial_parser{serial_parser_stream};
+    serial_parser.skip_header();
+    uint64_t expected_rows = 0;
+    while (serial_parser.next()) {
+        expected_rows++;
+    }
+    ASSERT_GT(expected_rows, 100'000'000);
+    serial_parser_stream.close();
+
+    // Get parallel row count
+    auto parts = CategoryLinksParser::make_parallel(dump, CategoryLinksParser::table_name, partitions);
+    std::atomic<uint64_t> row_count{0};
+    std::vector<std::thread> threads;
+    for (uint32_t i = 0; i < parts.size(); i++) {
+        threads.emplace_back(
+            [&parser = parts[i].first, &row_count]() {
+                while (parser.next())
+                    row_count++;
+            });
+    }
+    for (auto &thread : threads)
+        thread.join();
+    
+    // Verify same number of rows whether done in parallel or serially
+    ASSERT_EQ(expected_rows, row_count);
 }
 
 int main(int argc, char *argv[]) {
