@@ -72,7 +72,7 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
     parallel_processor([&dst, &counter,
                         &thread_num](CategoryLinksParser &parser) {
         LOG(INFO) << "Starting thread #" << thread_num.fetch_add(1) << "...";
-        static constexpr size_t batch_size = 100'000ULL;
+        static constexpr size_t batch_size = 10'000ULL;
         std::vector<CategoryLinksRow> batch;
         batch.reserve(batch_size);
         while (std::optional<CategoryLinksRow> row = parser.next()) {
