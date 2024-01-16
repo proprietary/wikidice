@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <optional>
 
 #include "build_category_tree.h"
 #include "category_table.h"
@@ -105,7 +106,7 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
             queue.emplace(std::move(batch));
         }
     });
-    queue.kill();
+    queue.close();
 }
 
 auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
