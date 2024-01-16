@@ -22,6 +22,8 @@ ABSL_FLAG(std::string, category_sql, "",
 ABSL_FLAG(std::string, page_sql, "",
           "Path to a decompressed table SQL dump "
           "file, e.g., enwiki-20231201-page.sql");
+ABSL_FLAG(uint32_t, parallelism, 8,
+          "Number of threads to use when parsing SQL dumps in parallel");
 
 using namespace net_zelcon::wikidice;
 
@@ -424,7 +426,7 @@ TEST(ParallelSQLParser, ReadCategoryTable) {
     }
     std::filesystem::path dump = absl::GetFlag(FLAGS_category_sql);
     std::string_view table_name = "category";
-    uint32_t n_partitions = 7;
+    const uint32_t n_partitions = absl::GetFlag(FLAGS_parallelism);
     std::ifstream stream{dump, std::ios::in};
     SQLParser serial_parser{stream, table_name};
     serial_parser.skip_header();
@@ -459,7 +461,7 @@ TEST(ParallelSQLParser, ReadPageTable) {
     if (absl::GetFlag(FLAGS_page_sql).empty()) {
         GTEST_SKIP();
     }
-    constexpr uint32_t partitions = 8;
+    const uint32_t partitions = absl::GetFlag(FLAGS_parallelism);
     const std::filesystem::path dump = absl::GetFlag(FLAGS_page_sql);
     std::ifstream serial_parser_stream{dump, std::ios::in};
     PageTableParser serial_parser{serial_parser_stream};
