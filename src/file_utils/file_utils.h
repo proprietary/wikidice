@@ -5,6 +5,8 @@
 #include <fstream>
 #include <streambuf>
 #include <utility>
+#include <memory>
+#include <filesystem>
 
 namespace net_zelcon::wikidice::file_utils {
 
@@ -34,9 +36,9 @@ class FilePortionStream : public std::istream {
                 if (current_pos >= end_)
                     return traits_type::eof();
                 auto read_up_to =
-                    std::min(static_cast<std::intmax_t>(current_pos) +
-                                 static_cast<std::intmax_t>(BUFFER_SIZE),
-                             static_cast<std::intmax_t>(end_));
+                    std::min(static_cast<intmax_t>(current_pos) +
+                                 static_cast<intmax_t>(BUFFER_SIZE),
+                             static_cast<intmax_t>(end_));
                 auto expected_count = read_up_to - current_pos;
                 auto got_count = wrapped_buf_->sgetn(buffer_.data(), expected_count);
                 if (got_count == 0)
