@@ -68,17 +68,19 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
               << n_threads << " threads...";
     std::atomic<bool> done{false};
     constexpr static size_t kBatchSize = 1'000'000;
-    boost::lockfree::queue<CategoryLinksRow *> queue{kBatchSize * n_threads};
+    boost::lockfree::queue<CategoryLinksRow *> queue{kBatchSize * 2};
     std::thread consumer_thread([&dst, &queue, &done]() {
         uint64_t counter = 0;
         std::vector<CategoryLinksRow> batch;
         batch.reserve(kBatchSize);
+        CategoryLinksRow *t = nullptr;
         while (!done) {
-            CategoryLinksRow *t = nullptr;
-            if (queue.pop(t)) {
+            while (queue.pop(t)) {
                 batch.emplace_back(*t);
-                if (t != nullptr)
+                if (t != nullptr) {
                     delete t;
+                    t = nullptr;
+                }
                 if (batch.size() >= kBatchSize) {
                     dst.import_categorylinks_rows(batch);
                     // Report progress
@@ -91,8 +93,6 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
                         << ") → category_name=" << batch.back().category_name;
                     batch.clear();
                 }
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
     });
