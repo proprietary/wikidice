@@ -12,11 +12,11 @@
 #include <iostream>
 #include <locale>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <string>
 #include <thread>
 #include <vector>
-#include <optional>
 
 #include "build_category_tree.h"
 #include "category_table.h"
@@ -64,30 +64,13 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
     LOG(INFO) << "Importing categorylinks table into RocksDB database at "
               << std::quoted(categorylinks_dump.string()) << " using "
               << n_threads << " threads...";
-    MPSCQueue<std::vector<CategoryLinksRow>> queue;
-    std::thread consumer_thread{[&dst, &queue]() {
-        uint64_t counter = 0;
-        auto batch = queue.pop();
-        if (!batch)
-            return;
-
-        dst.import_categorylinks_rows(*batch);
-
-        // Report progress
-        counter += batch->size();
-        LOG_IF(INFO, counter % 1'000'000 == 0)
-            << "Imported " << counter << " rows."
-            << " Last imported row: page_id=" << batch->back().page_id << " (a "
-            << to_string(batch->back().page_type)
-            << ") → category_name=" << batch->back().category_name;
-    }};
-    consumer_thread.detach();
+    std::atomic<uint64_t> counter{0};
     SQLDumpParallelProcessor<CategoryLinksParser> parallel_processor(
         categorylinks_dump);
-    parallel_processor.set_parallelism(n_threads - 1);
-    parallel_processor([&queue](CategoryLinksParser &parser) {
+    parallel_processor.set_parallelism(n_threads);
+    parallel_processor([&dst, &counter](CategoryLinksParser &parser) {
         LOG(INFO) << "Starting thread...";
-        static constexpr size_t batch_size = 100'000ULL;
+        static constexpr size_t batch_size = 10'000ULL;
         std::vector<CategoryLinksRow> batch;
         batch.reserve(batch_size);
         while (std::optional<CategoryLinksRow> row = parser.next()) {
@@ -98,15 +81,21 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
             if (batch.size() >= batch_size) {
                 DLOG(INFO) << "Importing batch of " << batch.size()
                            << " rows...";
-                queue.push(batch);
+                dst.import_categorylinks_rows(batch);
+                // Report progress
+                counter += batch.size();
+                LOG_IF(INFO, counter % 1'000'000 == 0)
+                    << "Imported " << counter << " rows."
+                    << " Last imported row: page_id=" << batch.back().page_id
+                    << " (a " << to_string(batch.back().page_type)
+                    << ") → category_name=" << batch.back().category_name;
                 batch.clear();
             }
         }
         if (!batch.empty()) {
-            queue.emplace(std::move(batch));
+            dst.import_categorylinks_rows(batch);
         }
     });
-    queue.close();
 }
 
 auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
