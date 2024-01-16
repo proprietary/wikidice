@@ -513,19 +513,19 @@ TEST(ParallelSQLParser, ReadCategoryLinksTable) {
     serial_parser_stream.close();
 
     // Get parallel row count
-    auto parts = CategoryLinksParser::make_parallel(dump, CategoryLinksParser::table_name, partitions);
+    auto parts = CategoryLinksParser::make_parallel(
+        dump, CategoryLinksParser::table_name, partitions);
     std::atomic<uint64_t> row_count{0};
     std::vector<std::thread> threads;
     for (uint32_t i = 0; i < parts.size(); i++) {
-        threads.emplace_back(
-            [&parser = parts[i].first, &row_count]() {
-                while (parser.next())
-                    row_count++;
-            });
+        threads.emplace_back([&parser = parts[i].first, &row_count]() {
+            while (parser.next())
+                row_count++;
+        });
     }
     for (auto &thread : threads)
         thread.join();
-    
+
     // Verify same number of rows whether done in parallel or serially
     ASSERT_EQ(expected_rows, row_count);
 }

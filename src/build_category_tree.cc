@@ -187,6 +187,8 @@ int main(int argc, char *argv[]) {
         category_tree_index.run_second_pass();
         LOG(INFO) << "Done building weights. Saved to: "
                   << db_destination_path.string();
+        // Removing temporary database for the `page` table
+        page_table.reset();
         std::filesystem::remove_all(page_dump_db_path);
         LOG(INFO) << "Removed temporary database for the `page` table at "
                   << page_dump_db_path.string();
