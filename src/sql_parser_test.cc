@@ -439,19 +439,13 @@ TEST(ParallelSQLParser, ReadCategoryTable) {
     stream.close();
 
     // get row count when done in parallel
-    auto parts = SQLParser<>::make_parallel(dump, table_name, n_partitions);
-    std::vector<std::thread> threads_running;
+    SQLDumpParallelProcessor<CategoryParser> processor{dump};
+    processor.set_parallelism(n_partitions);
     std::atomic<uint64_t> row_count{0};
-    for (uint32_t i = 0; i < parts.size(); i++) {
-        threads_running.emplace_back([&parts, i, &row_count]() {
-            auto &[parser, _] = parts[i];
-            while (parser.next())
-                row_count++;
-        });
-    }
-    for (auto &thread : threads_running) {
-        thread.join();
-    }
+    processor([&row_count](CategoryParser &parser) {
+        while (parser.next())
+            row_count++;
+    });
 
     ASSERT_EQ(expected_rows, row_count);
 }
@@ -475,23 +469,14 @@ TEST(ParallelSQLParser, ReadPageTable) {
     serial_parser_stream.close();
 
     // Get parallel row count
-    auto parts = PageTableParser::make_parallel(
-        dump, PageTableParser::table_name, partitions);
-    std::vector<std::thread> threads;
-    std::vector<uint64_t> row_counts(parts.size(), 0);
-    for (uint32_t i = 0; i < parts.size(); i++) {
-        threads.emplace_back(
-            [&parser = parts[i].first, &row_count = row_counts[i]]() {
-                while (parser.next())
-                    row_count++;
-            });
-    }
-    for (auto &thread : threads) {
-        thread.join();
-    }
-    uint64_t parallel_row_count =
-        std::accumulate(row_counts.begin(), row_counts.end(), 0);
-    ASSERT_EQ(expected_rows, parallel_row_count);
+    SQLDumpParallelProcessor<PageTableParser> processor{dump};
+    processor.set_parallelism(partitions);
+    std::atomic<uint64_t> row_count{0};
+    processor([&row_count](PageTableParser &parser) {
+        while (parser.next())
+            row_count++;
+    });
+    ASSERT_EQ(expected_rows, row_count);
 }
 
 TEST(ParallelSQLParser, ReadCategoryLinksTable) {
@@ -513,18 +498,14 @@ TEST(ParallelSQLParser, ReadCategoryLinksTable) {
     serial_parser_stream.close();
 
     // Get parallel row count
-    auto parts = CategoryLinksParser::make_parallel(
-        dump, CategoryLinksParser::table_name, partitions);
     std::atomic<uint64_t> row_count{0};
-    std::vector<std::thread> threads;
-    for (uint32_t i = 0; i < parts.size(); i++) {
-        threads.emplace_back([&parser = parts[i].first, &row_count]() {
-            while (parser.next())
-                row_count++;
-        });
-    }
-    for (auto &thread : threads)
-        thread.join();
+    SQLDumpParallelProcessor<CategoryLinksParser> processor{dump};
+    processor.set_parallelism(partitions);
+    processor([&row_count](CategoryLinksParser &parser) {
+        while (parser.next()) {
+            row_count++;
+        }
+    });
 
     // Verify same number of rows whether done in parallel or serially
     ASSERT_EQ(expected_rows, row_count);

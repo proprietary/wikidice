@@ -61,76 +61,67 @@ auto read_category_table(const std::filesystem::path sqldump)
 auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
                                    std::filesystem::path categorylinks_dump,
                                    uint32_t n_threads) -> void {
-    auto partitions = CategoryLinksParser::make_parallel(
-        categorylinks_dump, CategoryLinksParser::table_name, n_threads);
-    std::vector<std::thread> threads_running;
-    std::atomic<uint64_t> counter{0};
     LOG(INFO) << "Importing categorylinks table into RocksDB database at "
-              << std::quoted(categorylinks_dump.string()) << "...";
-    for (uint32_t i = 0; i < partitions.size(); ++i) {
-        auto &parser = partitions[i].first;
-        threads_running.emplace_back([&dst, &parser, i, &counter]() {
-            LOG(INFO) << "Starting thread #" << i << "...";
-            static constexpr size_t batch_size = 100'000ULL;
-            std::vector<CategoryLinksRow> batch;
-            batch.reserve(batch_size);
-            while (std::optional<CategoryLinksRow> row = parser.next()) {
-                // Enqueue row to write batch
-                batch.emplace_back(row.value());
+              << std::quoted(categorylinks_dump.string()) << " using "
+              << n_threads << " threads...";
+    std::atomic<uint64_t> counter{0};
+    std::atomic<uint32_t> thread_num{0};
+    SQLDumpParallelProcessor<CategoryLinksParser> parallel_processor(
+        categorylinks_dump);
+    parallel_processor.set_parallelism(n_threads);
+    parallel_processor([&dst, &counter,
+                        &thread_num](CategoryLinksParser &parser) {
+        LOG(INFO) << "Starting thread #" << thread_num.fetch_add(1) << "...";
+        static constexpr size_t batch_size = 100'000ULL;
+        std::vector<CategoryLinksRow> batch;
+        batch.reserve(batch_size);
+        while (std::optional<CategoryLinksRow> row = parser.next()) {
+            // Enqueue row to write batch
+            batch.emplace_back(row.value());
 
-                // Report progress
-                auto count_result = counter.fetch_add(1);
-                LOG_IF(INFO, count_result % 1'000'000 == 0)
-                    << "Thread #" << i << " imported " << count_result
-                    << " rows."
-                    << " Last imported row: page_id=" << batch.back().page_id
-                    << " (a " << to_string(batch.back().page_type)
-                    << ") → category_name=" << batch.back().category_name;
+            // Report progress
+            auto count_result = counter.fetch_add(1);
+            LOG_IF(INFO, count_result % 1'000'000 == 0)
+                << "Thread #" << thread_num << " imported " << count_result
+                << " rows."
+                << " Last imported row: page_id=" << batch.back().page_id
+                << " (a " << to_string(batch.back().page_type)
+                << ") → category_name=" << batch.back().category_name;
 
-                // Actualy insert batch into database if necessary
-                if (batch.size() >= batch_size) {
-                    DLOG(INFO) << "Thread #" << i << " importing batch of "
-                               << batch.size() << " rows...";
-                    dst.import_categorylinks_rows(batch);
-                    batch.clear();
-                }
-            }
-            if (!batch.empty()) {
+            // Actualy insert batch into database if necessary
+            if (batch.size() >= batch_size) {
+                DLOG(INFO) << "Thread #" << thread_num << " importing batch of "
+                           << batch.size() << " rows...";
                 dst.import_categorylinks_rows(batch);
+                batch.clear();
             }
-        });
-    }
-    for (auto &t : threads_running)
-        t.join();
+        }
+        if (!batch.empty()) {
+            dst.import_categorylinks_rows(batch);
+        }
+    });
 }
 
 auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
                                 std::filesystem::path page_dump,
                                 uint32_t n_threads) -> void {
-    auto partitions = PageTableParser::make_parallel(
-        page_dump, PageTableParser::table_name, n_threads);
-    std::vector<std::thread> threads_running;
+    LOG(INFO) << "Reading page table from " << std::quoted(page_dump.string())
+              << " using " << n_threads << " threads ...";
     std::atomic<uint64_t> counter{0};
-    LOG(INFO) << "Importing page table into RocksDB database at "
-              << std::quoted(page_dump.string()) << "...";
-    for (uint32_t i = 0; i < partitions.size(); ++i) {
-        auto &parser = partitions[i].first;
-        threads_running.emplace_back([&dst, &parser, i, &counter]() {
-            LOG(INFO) << "Starting thread #" << i << "...";
-            while (std::optional<PageTableRow> row = parser.next()) {
-                dst->add_page(row.value());
-                auto count_result = counter.fetch_add(1);
-                LOG_IF(INFO, count_result % 1'000'000 == 0)
-                    << "Thread #" << i << " imported " << count_result
-                    << " rows."
-                    << " Last imported row: page_id=" << row->page_id
-                    << " → page_title=" << row->page_title;
-            }
-        });
-    }
-    for (auto &t : threads_running) {
-        t.join();
-    }
+    std::atomic<uint32_t> thread_num{0};
+    SQLDumpParallelProcessor<PageTableParser> parallel_processor(page_dump);
+    parallel_processor.set_parallelism(n_threads);
+    parallel_processor([&dst, &counter, &thread_num](PageTableParser &parser) {
+        LOG(INFO) << "Starting thread #" << thread_num.fetch_add(1) << "...";
+        while (std::optional<PageTableRow> row = parser.next()) {
+            dst->add_page(row.value());
+            auto count_result = counter.fetch_add(1);
+            LOG_IF(INFO, count_result % 1'000'000 == 0)
+                << "Thread #" << thread_num << " imported " << count_result
+                << " rows." << " Last imported row: page_id=" << row->page_id
+                << " → page_title=" << row->page_title;
+        }
+    });
 }
 
 } // namespace

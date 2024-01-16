@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace net_zelcon::wikidice {
@@ -160,11 +160,11 @@ void SQLDumpParserUntypedRows::skip_header() {
     advance_to(stream_, insert_into_statement());
 }
 
-auto SQLDumpParserUntypedRows::split_offsets(size_t n_partitions)
-    -> std::vector<std::tuple<std::streamoff, std::streamoff>> {
+auto SQLDumpParserUntypedRows::split_offsets(uint32_t n_partitions)
+    -> std::vector<std::pair<std::streamoff, std::streamoff>> {
     CHECK_GT(n_partitions, 0ULL);
     const auto original_pos = stream_.tellg();
-    std::vector<std::tuple<std::streamoff, std::streamoff>> result;
+    std::vector<std::pair<std::streamoff, std::streamoff>> result;
     const std::intmax_t filesize = file_utils::get_file_size(stream_);
     const std::intmax_t partition_size =
         filesize / static_cast<std::intmax_t>(n_partitions);

@@ -2,6 +2,7 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/log/check.h>
+#include <absl/log/log.h>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +17,7 @@
 #include <streambuf>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include "category_link_type.h"
@@ -35,10 +37,10 @@ class SQLDumpParserUntypedRows {
         return *this;
     }
     auto skip_header() -> void;
+    auto get_table_name() const -> std::string_view { return table_name_; }
 
-  protected:
-    auto split_offsets(std::size_t n_partitions)
-        -> std::vector<std::tuple<std::streamoff, std::streamoff>>;
+    auto split_offsets(uint32_t n_partitions)
+        -> std::vector<std::pair<std::streamoff, std::streamoff>>;
 
   private:
     auto insert_into_statement() const -> std::string;
@@ -66,16 +68,12 @@ class BasicColumnDecompositionStrategy {
 template <ColumnDecompositionStrategy T = BasicColumnDecompositionStrategy>
 class SQLParser : public SQLDumpParserUntypedRows {
   public:
+    using strategy_type = T;
+
     SQLParser(std::istream &stream, std::string_view table_name)
         : SQLDumpParserUntypedRows{stream, table_name} {}
 
     auto next() -> std::optional<typename T::column_type>;
-
-    static auto make_parallel(const std::filesystem::path &sqldump,
-                              std::string_view table_name,
-                              std::size_t n_partitions)
-        -> std::vector<std::pair<
-            SQLParser<T>, std::unique_ptr<file_utils::FilePortionStream>>>;
 };
 
 class CategoryLinksRowDecompositionStrategy {
@@ -136,28 +134,69 @@ auto SQLParser<T>::next() -> std::optional<typename T::column_type> {
     return T::decompose(cols.value());
 }
 
-template <ColumnDecompositionStrategy T>
-auto SQLParser<T>::make_parallel(const std::filesystem::path &sqldump,
-                                 std::string_view table_name,
-                                 std::size_t n_partitions)
-    -> std::vector<std::pair<SQLParser<T>,
-                             std::unique_ptr<file_utils::FilePortionStream>>> {
-    using file_utils::FilePortionStream;
-    CHECK_GT(n_partitions, 0ULL);
-    CHECK(std::filesystem::is_regular_file(sqldump));
-    std::ifstream ps{sqldump, std::ios::in};
-    SQLParser<T> p{ps, table_name};
-    auto offsets = p.split_offsets(n_partitions);
-    std::vector<std::pair<SQLParser<T>, std::unique_ptr<FilePortionStream>>>
-        dst;
-    for (std::size_t i = 0; i < offsets.size(); ++i) {
-        auto stream =
-            std::make_unique<FilePortionStream>(FilePortionStream::open(
-                sqldump, std::get<0>(offsets[i]), std::get<1>(offsets[i])));
-        dst.emplace_back(std::make_pair(SQLParser<T>{*stream, table_name},
-                                        std::move(stream)));
+template <typename SQLParserType,
+          ColumnDecompositionStrategy C = SQLParserType::strategy_type>
+    requires std::is_base_of_v<SQLParser<C>, SQLParserType> &&
+             requires(SQLParserType a) {
+                 {
+                     SQLParserType::table_name
+                 } -> std::convertible_to<std::string_view>;
+             }
+class SQLDumpParallelProcessor {
+  private:
+    std::filesystem::path sqldump_;
+    std::string table_name_;
+    uint32_t n_threads_;
+
+    auto make_parallel()
+        -> std::vector<std::unique_ptr<file_utils::FilePortionStream>> {
+        using file_utils::FilePortionStream;
+        CHECK(std::filesystem::is_regular_file(sqldump_));
+        std::ifstream ps{sqldump_, std::ios::in};
+        SQLParserType p{ps};
+        auto offsets = p.split_offsets(n_threads_);
+        std::vector<std::unique_ptr<FilePortionStream>> dst;
+        for (std::size_t i = 0; i < offsets.size(); ++i) {
+            auto stream = std::make_unique<FilePortionStream>(
+                FilePortionStream::open(sqldump_, std::get<0>(offsets[i]),
+                                        std::get<1>(offsets[i])));
+            dst.emplace_back(std::move(stream));
+        }
+        return dst;
     }
-    return dst;
-}
+
+  public:
+    explicit SQLDumpParallelProcessor(const std::filesystem::path &sqldump,
+                                      uint32_t n_threads)
+        : sqldump_{sqldump}, table_name_{SQLParserType::table_name},
+          n_threads_{n_threads} {
+        CHECK_GT(n_threads, 0U);
+    }
+
+    explicit SQLDumpParallelProcessor(const std::filesystem::path &sqldump)
+        : SQLDumpParallelProcessor{sqldump,
+                                   std::thread::hardware_concurrency()} {}
+
+    auto set_parallelism(uint32_t n_threads) noexcept -> void {
+        CHECK_GT(n_threads, 0U);
+        n_threads_ = n_threads;
+    }
+
+    template <typename Fn> auto operator()(Fn &&fn) -> void {
+        auto streams = make_parallel();
+        std::vector<std::thread> threads;
+        uint32_t thread_num = 0;
+        for (auto &stream : streams) {
+            SQLParserType parser{*stream};
+            threads.emplace_back([&parser, &fn, thread_num]() {
+                LOG(INFO) << "Starting thread #" << thread_num << "...";
+                fn(parser);
+            });
+            thread_num++;
+        }
+        for (auto &t : threads)
+            t.join();
+    }
+};
 
 } // namespace net_zelcon::wikidice
