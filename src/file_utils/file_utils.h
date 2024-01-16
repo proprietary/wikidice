@@ -1,7 +1,10 @@
+#pragma once
+
 #include <algorithm>
 #include <array>
 #include <fstream>
 #include <streambuf>
+#include <utility>
 
 namespace net_zelcon::wikidice::file_utils {
 
@@ -17,26 +20,26 @@ class FilePortionStream : public std::istream {
      */
     class RangedStreamBuf : public std::streambuf {
       public:
-        RangedStreamBuf(std::streambuf *buf, std::streampos begin,
+        RangedStreamBuf(std::filebuf *buf, std::streampos begin,
                         std::streampos end)
-            : buf_{buf}, begin_{begin}, end_{end} {
-            buf_->pubseekoff(begin, std::ios::beg, std::ios::in);
+            : wrapped_buf_{buf}, begin_{begin}, end_{end} {
+            wrapped_buf_->pubseekoff(begin, std::ios::beg, std::ios::in);
             this->setg(nullptr, nullptr, nullptr);
         }
 
         int_type underflow() override {
             if (this->gptr() >= this->egptr()) {
                 auto current_pos =
-                    buf_->pubseekoff(0, std::ios::cur, std::ios::in);
+                    wrapped_buf_->pubseekoff(0, std::ios::cur, std::ios::in);
                 if (current_pos >= end_)
                     return traits_type::eof();
                 auto read_up_to =
-                    std::min(current_pos + static_cast<decltype(current_pos)>(
-                                               BUFFER_SIZE),
-                             end_);
+                    std::min(static_cast<std::intmax_t>(current_pos) +
+                                 static_cast<std::intmax_t>(BUFFER_SIZE),
+                             static_cast<std::intmax_t>(end_));
                 auto expected_count = read_up_to - current_pos;
-                auto got_count = buf_->sgetn(buffer_.data(), expected_count);
-                if (got_count == 0 || got_count != expected_count)
+                auto got_count = wrapped_buf_->sgetn(buffer_.data(), expected_count);
+                if (got_count == 0)
                     return traits_type::eof();
                 setg(buffer_.data(), buffer_.data(),
                      buffer_.data() + got_count);
@@ -45,7 +48,7 @@ class FilePortionStream : public std::istream {
         }
 
       private:
-        std::streambuf *buf_;
+        std::filebuf *wrapped_buf_;
         std::streampos begin_;
         std::streampos end_;
         constexpr static std::size_t BUFFER_SIZE = 1 << 20; // 1 MiB
@@ -76,7 +79,7 @@ class FilePortionStream : public std::istream {
         file_stream_ = std::move(other.file_stream_);
     }
 
-    FilePortionStream &operator()(FilePortionStream &&other) {
+    FilePortionStream &operator=(FilePortionStream &&other) {
         if (rdbuf() != nullptr)
             delete rdbuf();
         rdbuf(other.rdbuf());
@@ -90,4 +93,7 @@ class FilePortionStream : public std::istream {
             delete rdbuf();
     }
 };
+
+auto get_file_size(std::istream &stream) -> std::streamoff;
+
 } // namespace net_zelcon::wikidice::file_utils

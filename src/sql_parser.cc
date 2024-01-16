@@ -1,5 +1,6 @@
 #include "sql_parser.h"
 #include "bounded_string_ring.h"
+#include "file_utils/file_utils.h"
 #include <absl/log/check.h>
 #include <absl/log/log.h>
 #include <array>
@@ -23,7 +24,6 @@ namespace net_zelcon::wikidice {
 using std::literals::string_view_literals::operator""sv;
 
 namespace {
-
 void advance_to(std::istream &stream, std::string_view target) {
     const auto len = target.size();
     BoundedStringRing ring{len};
@@ -46,7 +46,7 @@ auto read_values_list(std::istream &stream) -> std::vector<std::string> {
             c = stream.get();
             if (c == '\n') {
                 continue;
-            } else if (c >= '0' && c <= '9') {
+            } else if ((c >= '0' && c <= '9') || (c == '.')) {
                 result.push_back(c);
             } else {
                 break;
@@ -72,6 +72,21 @@ auto read_values_list(std::istream &stream) -> std::vector<std::string> {
         }
         return result;
     };
+    const auto expect_null = [&stream]() -> bool {
+        const auto null_literal = "NULL"sv;
+        for (size_t i = 0; i < null_literal.length(); ++i) {
+            CHECK(stream.good());
+            if (stream.get() != null_literal[i]) {
+                LOG(ERROR) << "Expected NULL literal, but got something else.";
+                // unwind
+                for (size_t j = 0; j < i; ++j) {
+                    stream.unget();
+                }
+                return false;
+            }
+        }
+        return true;
+    };
     const auto advance_to_character = [&stream](const char target) {
         char c = std::char_traits<char>::eof();
         while (stream.good() && c != target) {
@@ -93,6 +108,12 @@ auto read_values_list(std::istream &stream) -> std::vector<std::string> {
             dst.push_back(s);
         } else if (c >= '0' && c <= '9') {
             dst.emplace_back(expect_number());
+        } else if (c == 'N') {
+            bool ok = expect_null();
+            if (ok)
+                dst.push_back("NULL");
+            else
+                LOG(FATAL) << "Expected NULL literal, but got something else.";
         } else {
             break;
         }
@@ -113,19 +134,10 @@ void sanitize(std::string &s) {
     remove_newlines(s);
     unescape(s);
 }
-
 } // namespace
 
-SQLParser::SQLParser(std::istream &stream, std::string_view table_name)
-    : stream_(stream), table_name_{table_name} {}
-
-void SQLParser::skip_header() {
-    const auto insert_into_statement =
-        fmt::format("INSERT INTO `{}` VALUES ", table_name_);
-    advance_to(stream_, insert_into_statement);
-}
-
-auto SQLParser::next() -> std::optional<std::vector<std::string>> {
+auto SQLDumpParserUntypedRows::next()
+    -> std::optional<std::vector<std::string>> {
     if (!stream_.good() || (stop_at_ && stream_.tellg() >= stop_at_.value())) {
         DLOG(WARNING) << "called next() on a bad stream";
         return std::nullopt;
@@ -140,42 +152,78 @@ auto SQLParser::next() -> std::optional<std::vector<std::string>> {
     return cols;
 }
 
-auto CategoryLinksParser::next() -> std::optional<CategoryLinksRow> {
-    auto row = SQLParser::next();
-    if (!row.has_value()) {
-        return std::nullopt;
-    }
-    if (row->size() != 7) {
-        int i = 0;
-        while (i++ < 300)
-            stream_.unget();
-        i = 0;
-        while (i++ < 1000) {
-            std::cout << static_cast<char>(stream_.get());
+auto SQLDumpParserUntypedRows::insert_into_statement() const -> std::string {
+    return fmt::format("INSERT INTO `{}` VALUES ", table_name_);
+}
+
+void SQLDumpParserUntypedRows::skip_header() {
+    advance_to(stream_, insert_into_statement());
+}
+
+auto SQLDumpParserUntypedRows::split_offsets(size_t n_partitions)
+    -> std::vector<std::tuple<std::streamoff, std::streamoff>> {
+    CHECK_GT(n_partitions, 0ULL);
+    const auto original_pos = stream_.tellg();
+    std::vector<std::tuple<std::streamoff, std::streamoff>> result;
+    const std::intmax_t filesize = file_utils::get_file_size(stream_);
+    const std::intmax_t partition_size =
+        filesize / static_cast<std::intmax_t>(n_partitions);
+    advance_to(stream_, insert_into_statement());
+    auto pos = stream_.tellg();
+    while (stream_.good()) {
+        if (static_cast<std::intmax_t>(pos) + partition_size >= filesize) {
+            result.emplace_back(pos, filesize);
+            break;
         }
-        std::cout << std::endl;
+        stream_.seekg(static_cast<std::intmax_t>(pos) + partition_size);
+        advance_to(stream_, insert_into_statement());
+        if (!stream_.good()) {
+            result.emplace_back(pos, filesize);
+        }
+        std::streamoff current_pos = stream_.tellg();
+        result.emplace_back(pos, current_pos);
+        pos = current_pos;
     }
-    CHECK(row->size() == 7) << fmt::format("expected 7 columns, got {} in : {}",
-                                           row->size(), row.value());
-    CategoryLinksRow result;
-    result.category_name = row->at(1);
-    result.page_id = std::stoull(row->at(0));
-    result.page_type = from(row->back());
+    // restore original position
+    stream_.seekg(original_pos);
+
     return result;
 }
 
-auto CategoryParser::next() -> std::optional<CategoryRow> {
-    auto row = SQLParser::next();
-    if (!row.has_value()) {
-        return std::nullopt;
-    }
-    CHECK(row->size() == 5) << "row has " << row->size()
-                            << " elements: " << fmt::format("{}", row.value());
+auto CategoryLinksRowDecompositionStrategy::decompose(
+    const std::vector<std::string> &row) -> CategoryLinksRow {
+    CHECK_EQ(7ULL, row.size())
+        << fmt::format("expected 7 columns, got {} in : {}", row.size(), row);
+    CategoryLinksRow result;
+    result.category_name = row.at(1);
+    result.page_id = std::stoull(row.at(0));
+    result.page_type = from(row.back());
+    return result;
+}
+
+auto CategoryTableRowDecompositionStrategy::decompose(
+    const std::vector<std::string> &row) -> CategoryRow {
+    CHECK_EQ(5ULL, row.size())
+        << "row has " << row.size() << " elements: " << fmt::format("{}", row);
     CategoryRow result;
-    result.category_id = std::stoull(row->at(0));
-    result.category_name = row->at(1);
-    result.page_count = std::stoi(row->at(2));
-    result.subcategory_count = std::stoi(row->at(3));
+    result.category_id = std::stoull(row.at(0));
+    result.category_name = row.at(1);
+    result.page_count = std::stoi(row.at(2));
+    result.subcategory_count = std::stoi(row.at(3));
+    return result;
+}
+
+auto PageRowDecompositionStrategy::decompose(
+    const std::vector<std::string> &row) -> PageTableRow {
+    CHECK_EQ(12ULL, row.size())
+        << fmt::format("Expected 12 rows in page table row, but got {} in: {}",
+                       row.size(), row);
+    CHECK(row.at(3) == "0" || row.at(3) == "1") << fmt::format(
+        "Expected 0 or 1 in page table row, but got {} in: {}", row.at(3), row);
+    PageTableRow result;
+    result.is_redirect = row.at(3) == "1";
+    result.page_id = std::stoull(row.at(0));
+    result.page_title = row.at(2);
     return result;
 }
 
@@ -190,46 +238,6 @@ auto read_category_table(std::istream &stream)
         }
         result[row->category_id] = *row;
     }
-    return result;
-}
-
-auto split_sqldump(const std::filesystem::path &sqldump,
-                   std::string_view table_name, uint32_t n_partitions)
-    -> std::vector<std::unique_ptr<FilePortionStream>> {
-    CHECK(std::filesystem::is_regular_file(sqldump));
-    auto parts = SQLParser::split_offsets(sqldump, table_name, n_partitions);
-    std::vector<std::unique_ptr<FilePortionStream>> dst;
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-        dst.emplace_back(std::make_unique<FilePortionStream>(
-            sqldump, std::get<0>(parts[i]), std::get<1>(parts[i])));
-    }
-    return dst;
-}
-
-auto SQLParser::split_offsets(const std::filesystem::path &sqldump,
-                              std::string_view table_name, size_t n_partitions)
-    -> std::vector<std::tuple<std::streamoff, std::streamoff>> {
-    CHECK_GT(n_partitions, 0ULL);
-    CHECK(std::filesystem::is_regular_file(sqldump));
-    std::vector<std::tuple<std::streamoff, std::streamoff>> result;
-    std::ifstream stream{sqldump, std::ios::in};
-    SQLParser parser{stream, table_name};
-    parser.skip_header();
-    std::streamoff begin_pos = stream.tellg();
-    const auto filesize = std::filesystem::file_size(sqldump);
-    const auto partition_size =
-        filesize / static_cast<std::uintmax_t>(n_partitions);
-    std::streamoff nth_partition = 1;
-    while (parser.next()) {
-        std::streamoff current_pos = stream.tellg();
-        if (static_cast<uintmax_t>(current_pos) >=
-            (partition_size * nth_partition)) {
-            result.emplace_back(begin_pos, current_pos);
-            begin_pos = current_pos;
-            nth_partition++;
-        }
-    }
-    result.emplace_back(begin_pos, filesize);
     return result;
 }
 

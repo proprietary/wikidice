@@ -22,10 +22,16 @@
 #include "category_tree_index.h"
 #include "cross_platform_set_thread_name.h"
 #include "sql_parser.h"
+#include "wiki_page_table.h"
 
-ABSL_FLAG(std::string, category_dump, "", "Path to the category SQL dump file");
+ABSL_FLAG(
+    std::string, category_dump, "",
+    "Path to the category SQL dump file. Example: enwiki-latest-category.sql");
 ABSL_FLAG(std::string, categorylinks_dump, "",
-          "Path to the categorylinks SQL dump file");
+          "Path to the categorylinks SQL dump file. Example: "
+          "enwiki-latest-categorylinks.sql");
+ABSL_FLAG(std::string, page_dump, "",
+          "Path to the page SQL dump file. Example: enwiki-latest-page.sql");
 ABSL_FLAG(std::string, db_path, "", "Path to the database directory");
 ABSL_FLAG(std::string, wikipedia_language_code, "en",
           "Wikipedia language code (e.g., \"en\", \"de\")");
@@ -54,42 +60,59 @@ auto read_category_table(const std::filesystem::path sqldump)
     return category_table;
 }
 
-auto read_categorylinks_table(CategoryTreeIndexWriter &dst,
-                              std::istream &table_stream, std::streamoff offset,
-                              int thread, std::atomic<uint64_t> &counter,
-                              bool skip_header = false) -> void {
-    CategoryLinksParser categorylinks_parser{table_stream};
-    if (skip_header) {
-        categorylinks_parser.skip_header();
-    }
-    if (offset != 0)
-        categorylinks_parser.with_stop_at(offset);
-    while (auto row = categorylinks_parser.next()) {
-        dst.import_categorylinks_row(row.value());
-        auto count_result = counter.fetch_add(1);
-        if (count_result % 1'000'000 == 0)
-            LOG(INFO) << fmt::format(
-                "Thread #{} ({}): Imported {:L} rows. Last imported row: "
-                "page_id={} (a {}) → category_name={}",
-                thread, this_thread_name(), count_result, row->page_id,
-                to_string(row->page_type), row->category_name);
-    }
-}
-
-auto parallel_read_categorylinks_table(CategoryTreeIndexWriter &dst,
-                                       std::filesystem::path sqldump,
-                                       uint32_t threads) -> void {
-    auto offsets = SQLParser::split_offsets(sqldump, "categorylinks", threads);
+auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
+                                   std::filesystem::path categorylinks_dump,
+                                   uint32_t n_threads) -> void {
+    auto partitions = CategoryLinksParser::make_parallel(
+        categorylinks_dump, CategoryLinksParser::table_name, n_threads);
     std::vector<std::thread> threads_running;
     std::atomic<uint64_t> counter{0};
-    for (uint32_t i = 0; i < offsets.size(); ++i) {
-        threads_running.emplace_back([&sqldump, &dst, &offsets, i, &counter]() {
+    LOG(INFO) << "Importing categorylinks table into RocksDB database at "
+              << std::quoted(categorylinks_dump.string()) << "...";
+    for (uint32_t i = 0; i < partitions.size(); ++i) {
+        auto &parser = partitions[i].first;
+        threads_running.emplace_back([&dst, &parser, i, &counter]() {
             LOG(INFO) << "Starting thread #" << i << "...";
-            set_thread_name(fmt::format("thread #{}", i).c_str());
-            std::ifstream stream{sqldump, std::ios::in};
-            stream.seekg(std::get<0>(offsets[i]));
-            read_categorylinks_table(dst, stream, std::get<1>(offsets[i]), i,
-                                     counter);
+            while (std::optional<CategoryLinksRow> row = parser.next()) {
+                dst.import_categorylinks_row(row.value());
+                auto count_result = counter.fetch_add(1);
+                if (count_result % 1'000'000 == 0) {
+                    LOG(INFO) << "Thread #" << i << " imported " << count_result
+                              << " rows."
+                              << " Last imported row: page_id=" << row->page_id
+                              << " (a " << to_string(row->page_type)
+                              << ") → category_name=" << row->category_name;
+                }
+            }
+        });
+    }
+    for (auto &t : threads_running)
+        t.join();
+}
+
+auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
+                                std::filesystem::path page_dump,
+                                uint32_t n_threads) -> void {
+    auto partitions = PageTableParser::make_parallel(
+        page_dump, PageTableParser::table_name, n_threads);
+    std::vector<std::thread> threads_running;
+    std::atomic<uint64_t> counter{0};
+    LOG(INFO) << "Importing page table into RocksDB database at "
+              << std::quoted(page_dump.string()) << "...";
+    for (uint32_t i = 0; i < partitions.size(); ++i) {
+        auto &parser = partitions[i].first;
+        threads_running.emplace_back([&dst, &parser, i, &counter]() {
+            LOG(INFO) << "Starting thread #" << i << "...";
+            while (std::optional<PageTableRow> row = parser.next()) {
+                dst->add_page(row.value());
+                auto count_result = counter.fetch_add(1);
+                if (count_result % 1'000'000 == 0) {
+                    LOG(INFO) << "Thread #" << i << " imported " << count_result
+                              << " rows."
+                              << " Last imported row: page_id=" << row->page_id
+                              << " → page_title=" << row->page_title;
+                }
+            }
         });
     }
     for (auto &t : threads_running) {
@@ -126,24 +149,36 @@ int main(int argc, char *argv[]) {
     CHECK(is_valid_language(absl::GetFlag(FLAGS_wikipedia_language_code)))
         << "Invalid Wikipedia language code (should be something like \"en\" "
            "or \"de\")";
+
+    // Import category table
     LOG(INFO) << "Reading category table from "
               << absl::GetFlag(FLAGS_category_dump) << "...";
     auto category_table =
         read_category_table(absl::GetFlag(FLAGS_category_dump));
     LOG(INFO) << "Done reading category table.";
+
+    // Import page table
+    const auto page_dump_db_path =
+        std::filesystem::path{absl::GetFlag(FLAGS_db_path)} /
+        std::filesystem::path{absl::StrCat(
+            absl::GetFlag(FLAGS_wikipedia_language_code), "_pages")};
+    auto page_table = std::make_shared<WikiPageTable>(page_dump_db_path);
+    parallel_import_page_table(page_table, absl::GetFlag(FLAGS_page_dump),
+                               absl::GetFlag(FLAGS_threads));
+
+    // Import categorylinks table
     const auto db_destination_path =
         std::filesystem::path{absl::GetFlag(FLAGS_db_path)} /
         std::filesystem::path{absl::GetFlag(FLAGS_wikipedia_language_code)};
     {
         CategoryTreeIndexWriter category_tree_index{
-            db_destination_path, category_table, absl::GetFlag(FLAGS_threads)};
-        std::ifstream categorylinks_dump_stream{
-            absl::GetFlag(FLAGS_categorylinks_dump)};
+            db_destination_path, category_table, page_table,
+            absl::GetFlag(FLAGS_threads)};
         LOG(INFO) << "Reading categorylinks table from "
                   << absl::GetFlag(FLAGS_categorylinks_dump) << "...";
-        parallel_read_categorylinks_table(
-            category_tree_index, absl::GetFlag(FLAGS_categorylinks_dump),
-            absl::GetFlag(FLAGS_threads));
+        parallel_import_categorylinks(category_tree_index,
+                                      absl::GetFlag(FLAGS_categorylinks_dump),
+                                      absl::GetFlag(FLAGS_threads));
         LOG(INFO) << "Done reading categorylinks table. Saved to: "
                   << db_destination_path.string();
         LOG(INFO) << "Starting to build weights...";
@@ -151,9 +186,11 @@ int main(int argc, char *argv[]) {
         LOG(INFO) << "Done building weights. Saved to: "
                   << db_destination_path.string();
     }
+    // Prepare database for reads and make sure it works
     LOG(INFO) << "Compressing database to ready it for reads...";
     CategoryTreeIndexReader category_tree_index_reader{db_destination_path};
     category_tree_index_reader.run_compaction();
+    // Sanity check
     const auto rows = category_tree_index_reader.count_rows();
     LOG(INFO) << "Built database with " << rows << " rows.";
     return 0;

@@ -10,7 +10,7 @@ namespace net_zelcon::wikidice {
 class CategoryTable {
   public:
     void add_category(const CategoryRow &category_row);
-    auto find(const std::uint64_t cat_id) const -> std::optional<CategoryRow>;
+    auto find(const CategoryId cat_id) const -> std::optional<CategoryRow>;
     auto find(const std::string_view category_name) const
         -> std::optional<CategoryRow>;
     void for_each(std::function<void(const CategoryRow &)> callback) const;

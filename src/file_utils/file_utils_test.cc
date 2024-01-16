@@ -25,6 +25,12 @@ class FilePortionStreamFixture : public ::testing::Test {
     std::ofstream temp_file;
 };
 
+TEST_F(FilePortionStreamFixture, TestFileSize) {
+    std::ifstream stream{temp_filename};
+    std::istream& stream_{stream};
+    ASSERT_EQ(get_file_size(stream_), 13);
+}
+
 TEST_F(FilePortionStreamFixture, ReadFilePortion) {
     std::streampos begin_pos = 0;
     std::streampos end_pos = 5;

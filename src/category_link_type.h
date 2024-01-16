@@ -6,6 +6,9 @@
 
 namespace net_zelcon::wikidice {
 
+using CategoryId = uint64_t;
+using PageId = uint64_t;
+
 enum class CategoryLinkType {
     PAGE = 0,
     SUBCAT = 1,
@@ -18,12 +21,18 @@ auto to_string(CategoryLinkType) -> std::string;
 
 struct CategoryLinksRow {
     std::string category_name;
-    std::uint64_t page_id;
+    PageId page_id;
     CategoryLinkType page_type;
 };
 
+struct PageTableRow {
+    PageId page_id;
+    std::string page_title;
+    bool is_redirect;
+};
+
 struct CategoryRow {
-    std::uint64_t category_id;
+    CategoryId category_id;
     std::string category_name;
     std::uint32_t page_count;
     std::uint32_t subcategory_count;

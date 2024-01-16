@@ -75,6 +75,8 @@ find_lto(CXX)
 
 # project
 
+add_subdirectory(src/file_utils)
+
 add_library(
     cross_platform_compat
     INTERFACE
@@ -147,12 +149,12 @@ target_sources(
 )
 target_link_libraries(
     sql_parser
-    PRIVATE
+    PUBLIC
+    file_utils
     bounded_string_ring
     absl::log absl::check
     fmt::fmt
     boost_headers
-    PUBLIC
     absl::flat_hash_map
     category_link_type
 )
@@ -163,6 +165,39 @@ target_compile_features(
 )
 target_compile_options(
     sql_parser
+    PRIVATE
+    -Wall -Wextra -Werror
+)
+
+
+add_library(
+    wiki_page_table
+    STATIC
+)
+target_sources(
+    wiki_page_table
+    PRIVATE
+    src/wiki_page_table.h
+    src/wiki_page_table.cc
+    PUBLIC
+    src/wiki_page_table.h
+)
+target_link_libraries(
+    wiki_page_table
+    PUBLIC
+    category_link_type
+    rocksdb-compiled
+    PRIVATE
+    absl::log absl::check
+    primitive_serializer
+)
+target_compile_features(
+    wiki_page_table
+    PRIVATE
+    cxx_std_23
+)
+target_compile_options(
+    wiki_page_table
     PRIVATE
     -Wall -Wextra -Werror
 )
@@ -200,6 +235,7 @@ target_link_libraries(
     cross_platform_compat
     primitive_serializer
     category_link_type
+    wiki_page_table
     fmt::fmt Threads::Threads boost_headers
     absl::flags absl::flags_parse
     absl::strings absl::str_format absl::time absl::base absl::hash absl::flat_hash_map

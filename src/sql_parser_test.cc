@@ -1,6 +1,8 @@
 #include <absl/flags/flag.h>
 #include <absl/flags/parse.h>
+#include <absl/log/check.h>
 #include <absl/log/log.h>
+#include <atomic>
 #include <filesystem>
 #include <fmt/core.h>
 #include <gtest/gtest.h>
@@ -17,6 +19,9 @@ ABSL_FLAG(std::string, categorylinks_sql, "",
 ABSL_FLAG(std::string, category_sql, "",
           "Path to a decompressed category SQL dump file, e.g., "
           "enwiki-20231201-category.sql");
+ABSL_FLAG(std::string, page_sql, "",
+          "Path to a decompressed table SQL dump "
+          "file, e.g., enwiki-20231201-page.sql");
 
 using namespace net_zelcon::wikidice;
 
@@ -387,7 +392,33 @@ TEST(CategoryLinksTable, TestRealDump) {
     ASSERT_GT(counter, 10'000);
 }
 
-TEST(ParallelSQLParser, SplitSQLDump) {
+TEST(PageTable, TestRealDump) {
+    if (absl::GetFlag(FLAGS_page_sql).empty()) {
+        GTEST_SKIP();
+    }
+    const std::filesystem::path page_dump_sql = absl::GetFlag(FLAGS_page_sql);
+    ASSERT_FALSE(page_dump_sql.empty());
+    ASSERT_TRUE(std::filesystem::exists(page_dump_sql));
+    std::ifstream stream{page_dump_sql};
+    PageTableParser iter{stream};
+    iter.skip_header();
+    std::optional<PageTableRow> row = std::nullopt;
+    uint64_t row_count = 0;
+    while (true) {
+        ASSERT_NO_THROW(row = iter.next());
+        if (!row.has_value())
+            break;
+        if (!row->is_redirect && !row->page_title.empty() &&
+            0 != row->page_id) {
+            row_count++;
+            LOG_IF(INFO, row_count % 100'000 == 0) << fmt::format(
+                "Checked {:L} rows of `page` SQL dump so far...", row_count);
+        }
+    }
+    ASSERT_GT(row_count, 100'000ULL);
+}
+
+TEST(ParallelSQLParser, ReadCategoryTable) {
     if (absl::GetFlag(FLAGS_category_sql).empty()) {
         GTEST_SKIP();
     }
@@ -403,29 +434,61 @@ TEST(ParallelSQLParser, SplitSQLDump) {
     while (serial_parser.next())
         expected_rows++;
     ASSERT_GT(expected_rows, 10'000);
+    stream.close();
 
     // get row count when done in parallel
-    auto offsets = SQLParser::split_offsets(dump, table_name, n_partitions);
-    ASSERT_GE(offsets.size(), n_partitions);
+    auto parts = SQLParser<>::make_parallel(dump, table_name, n_partitions);
+    ASSERT_EQ(static_cast<uint64_t>(n_partitions), parts.size());
     std::vector<std::thread> threads_running;
-    std::vector<uint64_t> row_counts(offsets.size(), 0);
-    for (uint32_t i = 0; i <= offsets.size(); i++) {
-        threads_running.emplace_back([&dump, &offsets, i = i, &row_counts]() {
-            std::streamoff start = std::get<0>(offsets[i]);
-            std::streamoff end = std::get<1>(offsets[i]);
-            std::ifstream stream{dump, std::ios::in};
-            stream.seekg(start);
-            SQLParser parser{stream, "category"};
-            parser.with_stop_at(end);
+    std::atomic<uint64_t> row_count{0};
+    for (uint32_t i = 0; i < parts.size(); i++) {
+        threads_running.emplace_back([&parts, i, &row_count]() {
+            auto &[parser, _] = parts[i];
             while (parser.next())
-                row_counts[i]++;
+                row_count++;
         });
     }
     for (auto &thread : threads_running) {
         thread.join();
     }
 
-    // Add your assertions here to validate the result
+    ASSERT_EQ(expected_rows, row_count);
+}
+
+TEST(ParallelSQLParser, ReadPageTable) {
+    if (absl::GetFlag(FLAGS_page_sql).empty()) {
+        GTEST_SKIP();
+    }
+    constexpr uint32_t partitions = 8;
+    const std::filesystem::path dump = absl::GetFlag(FLAGS_page_sql);
+    std::ifstream serial_parser_stream{dump, std::ios::in};
+    PageTableParser serial_parser{serial_parser_stream};
+    serial_parser.skip_header();
+
+    // Get normal row count
+    uint64_t expected_rows = 0;
+    while (serial_parser.next()) {
+        expected_rows++;
+    }
+    ASSERT_GT(expected_rows, 100'000);
+    serial_parser_stream.close();
+
+    // Get parallel row count
+    auto parts = PageTableParser::make_parallel(
+        dump, PageTableParser::table_name, partitions);
+    ASSERT_EQ(static_cast<uint64_t>(partitions), parts.size());
+    std::vector<std::thread> threads;
+    std::vector<uint64_t> row_counts(parts.size(), 0);
+    for (uint32_t i = 0; i < parts.size(); i++) {
+        threads.emplace_back(
+            [&parser = parts[i].first, &row_count = row_counts[i]]() {
+                while (parser.next())
+                    row_count++;
+            });
+    }
+    for (auto &thread : threads) {
+        thread.join();
+    }
     uint64_t parallel_row_count =
         std::accumulate(row_counts.begin(), row_counts.end(), 0);
     ASSERT_EQ(expected_rows, parallel_row_count);

@@ -120,7 +120,7 @@ void CategoryTreeIndex::run_compaction() {
     db_->CompactRange(compact_options, categorylinks_cf_, nullptr, nullptr);
 }
 
-auto CategoryTreeIndex::category_name_of(uint64_t category_id)
+auto CategoryTreeIndex::category_name_of(CategoryId category_id)
     -> std::optional<std::string> {
     auto ser = primitive_serializer::serialize_u64(category_id);
     rocksdb::Slice key{reinterpret_cast<const char *>(ser.data()), ser.size()};
@@ -143,7 +143,7 @@ auto CategoryTreeIndex::category_name_of(uint64_t category_id)
     return value.ToString();
 }
 
-auto CategoryTreeIndexWriter::category_name_of(uint64_t category_id)
+auto CategoryTreeIndexWriter::category_name_of(CategoryId category_id)
     -> std::optional<std::string> {
     const auto category_row = category_table_->find(category_id);
     if (!category_row) {
@@ -175,14 +175,17 @@ auto CategoryTreeIndex::get(std::string_view category_name)
     rocksdb::PinnableSlice value;
     rocksdb::ReadOptions read_options;
     const auto status = db_->Get(read_options, categorylinks_cf_, key, &value);
-    if (!status.ok()) {
-        if (status.IsNotFound()) {
-            return std::nullopt;
-        }
-        // TODO: make this recoverable
-        LOG(FATAL) << "Failed to get category_name: " << category_name
-                   << " status: " << status.ToString();
+    if (status.IsNotFound()) {
+        DLOG(INFO) << "category_name: " << category_name
+                   << " not found in `categorylinks` column family";
+        return std::nullopt;
     }
+    DCHECK(status.ok()) << "Bad database state. Unable to retrieve category "
+                           "link record for category: "
+                        << category_name;
+    LOG_IF(ERROR, !status.ok())
+        << "Failed to get category_name: " << category_name
+        << " status: " << status.ToString();
     // 2. Deserialize
     msgpack::zone zone;
     const auto o = msgpack::unpack(zone, value.data(), value.size());
@@ -192,9 +195,10 @@ auto CategoryTreeIndex::get(std::string_view category_name)
 
 CategoryTreeIndexWriter::CategoryTreeIndexWriter(
     const std::filesystem::path db_path,
-    std::shared_ptr<CategoryTable> category_table, uint32_t n_threads)
+    std::shared_ptr<CategoryTable> category_table,
+    std::shared_ptr<WikiPageTable> wiki_page_table, uint32_t n_threads)
     : CategoryTreeIndex(db_path), category_table_{category_table},
-      n_threads_{n_threads} {
+      wiki_page_table_{wiki_page_table}, n_threads_{n_threads} {
     category_table_->for_each(
         [this](const CategoryRow &row) { import_category_row(row); });
 }
@@ -221,9 +225,15 @@ void CategoryTreeIndexWriter::import_categorylinks_row(
     case CategoryLinkType::PAGE:
         add_page(row.category_name, row.page_id);
         break;
-    case CategoryLinkType::SUBCAT:
-        add_subcategory(row.category_name, row.page_id);
+    case CategoryLinkType::SUBCAT: {
+        auto subcategory_id = page_id_to_category_id(row.page_id);
+        CHECK(subcategory_id.has_value())
+            << "Failed to find category ID corresponding to "
+               "page id: "
+            << row.page_id;
+        add_subcategory(row.category_name, subcategory_id.value());
         break;
+    }
     }
     categorylinks_count_ += 1;
 }
@@ -242,9 +252,9 @@ void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
 }
 
 void CategoryTreeIndexWriter::add_subcategory(
-    const std::string_view category_name, const uint64_t subcategory_page_id) {
+    const std::string_view category_name, const CategoryId subcategory_id) {
     CategoryLinkRecord new_record{};
-    new_record.subcategories_mut().push_back(subcategory_page_id);
+    new_record.subcategories_mut().push_back(subcategory_id);
     msgpack::sbuffer buf;
     msgpack::pack(buf, new_record);
     rocksdb::Slice value{buf.data(), buf.size()};
@@ -255,7 +265,7 @@ void CategoryTreeIndexWriter::add_subcategory(
 }
 
 void CategoryTreeIndexWriter::add_page(const std::string_view category_name,
-                                       const std::uint64_t page_id) {
+                                       const PageId page_id) {
     CategoryLinkRecord new_record{};
     new_record.pages_mut().push_back(page_id);
     msgpack::sbuffer buf;
@@ -309,7 +319,7 @@ void CategoryTreeIndexWriter::set_weight(const std::string_view category_name,
 
 auto CategoryTreeIndexReader::pick(std::string_view category_name,
                                    absl::BitGenRef random_generator)
-    -> std::optional<std::uint64_t> {
+    -> std::optional<PageId> {
     const auto weight = lookup_weight(category_name);
     if (!weight) {
         return std::nullopt;
@@ -320,7 +330,7 @@ auto CategoryTreeIndexReader::pick(std::string_view category_name,
 }
 
 auto CategoryTreeIndex::at_index(std::string_view category_name,
-                                 std::uint64_t index) -> std::uint64_t {
+                                 std::uint64_t index) -> PageId {
     auto record = get(category_name);
     if (!record)
         LOG(WARNING) << "category_name: " << category_name
@@ -427,6 +437,17 @@ auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
         depth += 1.0f;
     }
     return weight;
+}
+
+auto CategoryTreeIndexWriter::page_id_to_category_id(PageId page_id)
+    -> std::optional<CategoryId> {
+    auto page_row = wiki_page_table_->find(page_id);
+    if (!page_row)
+        return std::nullopt;
+    auto category_row = category_table_->find(page_row->page_title);
+    if (!category_row)
+        return std::nullopt;
+    return category_row->category_id;
 }
 
 auto CategoryTreeIndexWriter::run_second_pass() -> void {

@@ -20,19 +20,20 @@
 
 #include "category_link_type.h"
 #include "category_table.h"
+#include "wiki_page_table.h"
 
 namespace net_zelcon::wikidice {
 
 class CategoryLinkRecord {
   public:
     CategoryLinkRecord() {}
-    auto pages() const noexcept -> std::vector<uint64_t> { return pages_; }
-    auto subcategories() const noexcept -> std::vector<uint64_t> {
+    auto pages() const noexcept -> std::vector<PageId> { return pages_; }
+    auto subcategories() const noexcept -> std::vector<CategoryId> {
         return subcategories_;
     }
     auto weight() const noexcept -> uint64_t { return weight_; }
-    auto pages_mut() noexcept -> std::vector<uint64_t> & { return pages_; }
-    auto subcategories_mut() noexcept -> std::vector<uint64_t> & {
+    auto pages_mut() noexcept -> std::vector<PageId> & { return pages_; }
+    auto subcategories_mut() noexcept -> std::vector<CategoryId> & {
         return subcategories_;
     }
     auto weight_mut() noexcept -> uint64_t & { return weight_; }
@@ -42,10 +43,10 @@ class CategoryLinkRecord {
                lhs.subcategories_ == rhs.subcategories_ &&
                lhs.weight_ == rhs.weight_;
     }
-    void pages(std::vector<uint64_t> &&pages) noexcept {
+    void pages(std::vector<PageId> &&pages) noexcept {
         pages_ = std::move(pages);
     }
-    void subcategories(std::vector<uint64_t> &&subcategories) noexcept {
+    void subcategories(std::vector<CategoryId> &&subcategories) noexcept {
         subcategories_ = std::move(subcategories);
     }
     void weight(const uint64_t weight) noexcept { weight_ = weight; }
@@ -63,8 +64,8 @@ class CategoryLinkRecord {
     }
 
   private:
-    std::vector<uint64_t> pages_;
-    std::vector<uint64_t> subcategories_;
+    std::vector<PageId> pages_;
+    std::vector<CategoryId> subcategories_;
     uint64_t weight_ = 0ULL;
 };
 
@@ -92,10 +93,12 @@ class CategoryTreeIndex {
   public:
     explicit CategoryTreeIndex(const std::filesystem::path db_path);
     virtual ~CategoryTreeIndex() {
-        for (auto cf : column_family_handles_) {
-            delete cf;
-        }
-        delete db_;
+        for (auto cf : column_family_handles_)
+            if (cf != nullptr)
+                delete cf;
+
+        if (db_ != nullptr)
+            delete db_;
     }
     CategoryTreeIndex(const CategoryTreeIndex &other) = delete;
     CategoryTreeIndex &operator=(const CategoryTreeIndex &other) = delete;
@@ -109,6 +112,8 @@ class CategoryTreeIndex {
         other.category_id_to_name_cf_ = nullptr;
     }
     virtual CategoryTreeIndex &operator=(CategoryTreeIndex &&other) {
+        if (db_ != nullptr)
+            delete db_;
         db_ = other.db_;
         other.db_ = nullptr;
         column_family_handles_ = std::move(other.column_family_handles_);
@@ -144,7 +149,7 @@ class CategoryTreeIndex {
                   std::uint64_t index) -> std::uint64_t;
 
     virtual auto
-    category_name_of(uint64_t category_id) -> std::optional<std::string>;
+    category_name_of(CategoryId category_id) -> std::optional<std::string>;
 
     virtual auto
     categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions;
@@ -157,7 +162,8 @@ class CategoryTreeIndex {
     /**
      * @brief Map a list of category IDs to their names.
      */
-    auto map_categories(absl::Span<const uint64_t>) -> std::vector<std::string>;
+    auto map_categories(absl::Span<const CategoryId>)
+        -> std::vector<std::string>;
 
     auto category_id_to_name_cf_options() const -> rocksdb::ColumnFamilyOptions;
 };
@@ -172,7 +178,8 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     explicit CategoryTreeIndexWriter(
         const std::filesystem::path db_path,
-        std::shared_ptr<CategoryTable> category_table, uint32_t n_threads);
+        std::shared_ptr<CategoryTable> category_table,
+        std::shared_ptr<WikiPageTable> wiki_page_table, uint32_t n_threads);
 
     CategoryTreeIndexWriter(CategoryTreeIndexWriter &&other) {
         db_ = other.db_;
@@ -204,17 +211,16 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     auto db_options() const -> rocksdb::DBOptions override;
 
-    auto
-    category_name_of(uint64_t category_id) -> std::optional<std::string> final;
+    auto category_name_of(CategoryId category_id)
+        -> std::optional<std::string> final;
 
   private:
     void set(std::string_view category_name, const CategoryLinkRecord &);
 
     void add_subcategory(const std::string_view category_name,
-                         const uint64_t subcategory_page_id);
+                         const CategoryId subcategory_id);
 
-    void add_page(const std::string_view category_name,
-                  const std::uint64_t page_id);
+    void add_page(const std::string_view category_name, const PageId page_id);
 
     void set_weight(const std::string_view category_name,
                     const std::uint64_t weight);
@@ -237,8 +243,11 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
                    float max_depth = std::numeric_limits<float>::infinity())
         -> std::uint64_t;
 
+    auto page_id_to_category_id(PageId page_id) -> std::optional<CategoryId>;
+
   private:
     std::shared_ptr<CategoryTable> category_table_;
+    std::shared_ptr<WikiPageTable> wiki_page_table_;
     uint32_t n_threads_;
     std::atomic<uint64_t> categorylinks_count_;
 };
@@ -246,7 +255,7 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 class CategoryTreeIndexReader : public CategoryTreeIndex {
   public:
     auto pick(std::string_view category_name,
-              absl::BitGenRef random_generator) -> std::optional<std::uint64_t>;
+              absl::BitGenRef random_generator) -> std::optional<PageId>;
 
     auto search_categories(std::string_view category_name_prefix)
         -> std::vector<std::string>;
