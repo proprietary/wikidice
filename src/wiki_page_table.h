@@ -16,6 +16,7 @@ class WikiPageTable {
     auto find(const PageId) -> std::optional<PageTableRow>;
     explicit WikiPageTable(const std::filesystem::path &);
     ~WikiPageTable();
+    WikiPageTable() = delete;
     WikiPageTable(const WikiPageTable &) = delete;
     WikiPageTable(WikiPageTable &&);
     auto operator=(WikiPageTable &) -> WikiPageTable & = delete;

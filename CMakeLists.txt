@@ -370,7 +370,28 @@ target_compile_options(
 )
 target_link_options(bounded_string_ring_test PRIVATE -fsanitize=undefined,address -fuse-ld=lld)
 
+add_executable(wiki_page_table_test src/wiki_page_table_test.cc)
+target_compile_features(wiki_page_table_test PRIVATE cxx_std_23)
+target_link_libraries(
+    wiki_page_table_test
+    PRIVATE
+    wiki_page_table
+    gtest_main gmock_main gmock
+)
+target_compile_options(
+    wiki_page_table_test
+    PRIVATE
+    -Wall -Wextra -Werror -g3
+    -fsanitize=undefined,address -fno-omit-frame-pointer
+)
+target_link_options(
+    wiki_page_table_test
+    PRIVATE
+    -fsanitize=undefined,address
+)
+
 include(GoogleTest)
 gtest_discover_tests(sql_parser_test)
 gtest_discover_tests(category_tree_index_test)
 gtest_discover_tests(bounded_string_ring_test)
+gtest_discover_tests(wiki_page_table_test)

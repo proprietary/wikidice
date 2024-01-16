@@ -125,9 +125,9 @@ auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
 namespace net_zelcon::wikidice {
 
 auto is_valid_language(std::string_view language) -> bool {
-    return std::ranges::any_of(WIKIPEDIA_LANGUAGE_CODES, [language](auto code) {
-        return code == language;
-    });
+    return std::find(std::begin(WIKIPEDIA_LANGUAGE_CODES),
+                     std::end(WIKIPEDIA_LANGUAGE_CODES),
+                     language) != std::end(WIKIPEDIA_LANGUAGE_CODES);
 }
 
 } // namespace net_zelcon::wikidice
@@ -162,6 +162,8 @@ int main(int argc, char *argv[]) {
         std::filesystem::path{absl::GetFlag(FLAGS_db_path)} /
         std::filesystem::path{absl::StrCat(
             absl::GetFlag(FLAGS_wikipedia_language_code), "_pages")};
+    LOG(INFO) << "Creating temporary database for the `page` table at "
+              << page_dump_db_path.string() << "...";
     auto page_table = std::make_shared<WikiPageTable>(page_dump_db_path);
     parallel_import_page_table(page_table, absl::GetFlag(FLAGS_page_dump),
                                absl::GetFlag(FLAGS_threads));
@@ -185,6 +187,9 @@ int main(int argc, char *argv[]) {
         category_tree_index.run_second_pass();
         LOG(INFO) << "Done building weights. Saved to: "
                   << db_destination_path.string();
+        std::filesystem::remove_all(page_dump_db_path);
+        LOG(INFO) << "Removed temporary database for the `page` table at "
+                  << page_dump_db_path.string();
     }
     // Prepare database for reads and make sure it works
     LOG(INFO) << "Compressing database to ready it for reads...";
