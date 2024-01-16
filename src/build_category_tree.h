@@ -113,6 +113,11 @@ template <typename T> class MPSCBlockingQueue {
         cv_.notify_all();
         return data;
     }
+
+    auto empty() -> bool {
+        std::unique_lock<std::mutex> lock{m_};
+        return queue_.empty();
+    }
 };
 
 } // namespace net_zelcon::wikidice

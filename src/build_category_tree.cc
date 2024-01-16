@@ -73,7 +73,7 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
         uint64_t counter = 0;
         std::vector<const CategoryLinksRow *> batch;
         batch.reserve(kBatchSize);
-        while (!done) {
+        while (!done || !queue.empty()) {
             CategoryLinksRow *t = queue.pop();
             batch.push_back(t);
             if (batch.size() >= kBatchSize) {
@@ -91,6 +91,8 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
                 batch.clear();
             }
         }
+        if (!batch.empty())
+            dst.import_categorylinks_rows(batch);
     });
     consumer_thread.detach();
     SQLDumpParallelProcessor<CategoryLinksParser> parallel_processor(
