@@ -65,14 +65,14 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
               << std::quoted(categorylinks_dump.string()) << " using "
               << n_threads << " threads...";
     std::atomic<uint64_t> counter{0};
-    std::atomic<uint32_t> thread_num{0};
+    uint32_t thread_num = 0;
     SQLDumpParallelProcessor<CategoryLinksParser> parallel_processor(
         categorylinks_dump);
     parallel_processor.set_parallelism(n_threads);
-    parallel_processor([&dst, &counter, nth_thread = thread_num.fetch_add(1)](
+    parallel_processor([&dst, &counter, nth_thread = thread_num++](
                            CategoryLinksParser &parser) {
         LOG(INFO) << "Starting thread #" << nth_thread << "...";
-        static constexpr size_t batch_size = 1'000'000ULL;
+        static constexpr size_t batch_size = 10ULL;
         std::vector<CategoryLinksRow> batch;
         batch.reserve(batch_size);
         while (std::optional<CategoryLinksRow> row = parser.next()) {

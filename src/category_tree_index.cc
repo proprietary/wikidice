@@ -254,9 +254,6 @@ void CategoryTreeIndexWriter::import_categorylinks_rows(
     CHECK(status.ok()) << "Batch write of category link rows failed: "
                        << status.ToString();
     categorylinks_count_ += rows.size();
-    if (categorylinks_count_ % 10'000'000 == 0)
-        db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
-                          nullptr, nullptr);
 }
 
 void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
@@ -470,6 +467,9 @@ auto CategoryTreeIndexWriter::page_id_to_category_id(PageId page_id)
 }
 
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
+    // perform manual compaction
+    db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
+                      nullptr, nullptr);
     // build the "weights" (the number of leaf nodes (pages) under a category)
     LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
                  "under a category)...";
@@ -480,7 +480,8 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
     flush_options.wait = true;
     db_->Flush(flush_options);
     // perform manual compaction
-    run_compaction();
+    db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
+                      nullptr, nullptr);
 }
 
 CategoryTreeIndexReader::CategoryTreeIndexReader(
