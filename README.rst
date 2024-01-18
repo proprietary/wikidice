@@ -53,6 +53,7 @@ All other dependencies, including RocksDB, are vendored in ``/external`` and bui
 To build::
 
 . code-block:: bash
+
   $ git clone https://github.com/proprietary/wikidice.git
   $ cd wikidice
   $ mkdir build
