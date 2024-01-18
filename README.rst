@@ -54,14 +54,14 @@ To build:
 
 .. code-block:: bash
 
-  $ git clone https://github.com/proprietary/wikidice.git
-  $ cd wikidice
-  $ mkdir build
-  $ cd build
-  $ cmake -DCMAKE_BUILD_TYPE=Release ..
-  $ make
-  $ cd ..
-  $ ./create-database.sh
+  git clone https://github.com/proprietary/wikidice.git
+  cd wikidice
+  mkdir build
+  cd build
+  cmake -DCMAKE_BUILD_TYPE=Release ..
+  make
+  cd ..
+  ./create-database.sh
 
 
 Disclaimer
