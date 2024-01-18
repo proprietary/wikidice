@@ -1,59 +1,67 @@
 wikidice
 --------
 
-REWRITE IN PROGRESS: new version will be in C++ and use a more efficient database schema.
+What does this do?
+==================
 
----
+Wikipedia has its own built-in "Random Page" function. You click it and it gives
+you a random page. But what if you want to learn about a random topic within a
+specific category? For example, I want to learn about a random topic within the
+"Computer Science" category. There's no way to do that with Wikipedia's built-in
+"Random Page" function. This is what `wikidice` is for. It serves a random
+Wikipedia article within a specific category--recursively, including any page
+within any of the nested subcategories.
 
-INSERT INTO `categorylinks` VALUES
+The data comes from the `Wikipedia database dumps
+<https://dumps.wikimedia.org/>`_. These are SQL dump files distributed for free
+by Wikipedia. Specifically, we need the dumps for the `categorylinks` table, the
+`page` table, and the `category` table.
 
-This software serves a random Wikipedia article within a specific category. Wikipedia itself has a Random Page feature, but it chooses a random article out of the entire site. I'm not interested in everything. If I want to learn a random topic just under a specific category, there's no way to do that. This is what `wikidice` is for. You can choose whichever category (as long as it has a "Category:" page) and a recursion depth for how many levels of subcategories you want to choose from. Try it out!
+This used to be a Go application that communicated with a MySQL database. The
+problem with this was, it was very costly to import the SQL dumps into MySQL. It
+would take several days to import the SQL dumps, then maybe a day or two more to
+populate the tables in a fashion which is efficient for these kinds of random
+lookups. Also, the MySQL database was huge, requiring 50GB+ of disk space on a
+server, which didn't make sense for a simple toy-ish application like this which
+makes no money. This latest version is a rewrite where the data is prepared by a
+C++ program. This C++ program parses the SQL dumps and stores it in an
+efficient, compressed RocksDB database. To build the database using this C++
+program, you need beefy hardware. It needs at least 8GB of RAM and 100GB of
+disk--preferably NVME or a ramdisk even. The program reads the SQL dumps and
+processes them in parallel using all available cores. On an AMD Ryzen 9, it
+takes ~2-5 hours to build the database.
 
-Setting up the database
-=======================
+A user-friendly Web frontend is forthcoming, but for now an HTTP API is built
+and implemented.
 
-All requests come from a MySQL/MariaDB database that locally mirrors a couple of `Wikipedia's database dumps <https://dumps.wikimedia.org/>`_.
+Installation
+============
 
-We need to import two tables from Wikipedia's dumps:
+Dependencies:
 
-1. `Categorylinks table <https://www.mediawiki.org/wiki/Manual:Categorylinks_table>`_ contains mappings from pages to categories to which they belong.
-2. `Page table <https://www.mediawiki.org/wiki/Manual:Page_table>`_, for our purposes, contains the page title associated with a numeric page ID.
+- C++20 compiler (GCC 10+ or Clang 10+)
+- CMake 3.24+
+- Zstandard 1.5+
+- Python3.12+ including Python development headers
 
-For example: the latest dump of the `categorylinks` table as of writing is: `https://dumps.wikimedia.org/enwiki/20220301/enwiki-20220301-categorylinks.sql.gz`. The latest dump of the `page` table as of writing is: `https://dumps.wikimedia.org/enwiki/20220301/enwiki-20220301-page.sql.gz`. Download, extract with gunzip(1), and import into a new MySQL database.
+All other dependencies, including RocksDB, are vendored in `external` and built with the CMake project.
 
-To make lookups faster, create a third table as follows::
+To build::
 
-  > describe page_cat_ids;
-  +---------+------------------------------+------+-----+---------+-------+
-  | Field   | Type                         | Null | Key | Default | Extra |
-  +---------+------------------------------+------+-----+---------+-------+
-  | page_id | int(8) unsigned              | NO   | MUL | NULL    |       |
-  | cat_id  | int(8) unsigned              | NO   | MUL | NULL    |       |
-  | cl_type | enum('page','subcat','file') | NO   |     | page    |       |
-  +---------+------------------------------+------+-----+---------+-------+
+  $ git clone https://github.com/proprietary/wikidice.git
+  $ cd wikidice
+  $ mkdir build
+  $ cd build
+  $ cmake -DCMAKE_BUILD_TYPE=Release ..
+  $ make
+  $ cd ..
+  $ ./create-database.sh
 
-  -- How to create this database:
-  
-  CREATE TABLE page_cat_ids (
-  page_id int(8) unsigned not null,
-  cat_id int(8) unsigned not null,
-  cl_type enum('page', 'subcat', 'file') default 'page'
-  );
-
-  -- Then populate it (after you import `page` and `categorylinks` tables).
-  -- This may take a long time and use a lot of memory.
-  -- If it fails, try setting `innodb_buffer_pool_size = 8G` in your MySQL/MariaDB config.
-
-  INSERT INTO page_cat_ids (page_id, cat_id, cl_type)
-  SELECT cl.cl_from AS page_id, page.page_id AS cat_id, cl.cl_type AS cl_type
-  FROM categorylinks cl
-  INNER JOIN page ON page.page_title = cl.cl_to AND page.page_namespace = 14;
 
 Disclaimer
 ==========
 
 Not associated or affiliated with Wikipedia in any way.
-
 
 License
 =======
