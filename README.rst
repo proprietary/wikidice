@@ -50,7 +50,7 @@ Dependencies:
 
 All other dependencies, including RocksDB, are vendored in ``/external`` and built with the CMake project.
 
-To build: ::
+To build:
 
 .. code-block:: bash
   $ git clone https://github.com/proprietary/wikidice.git
