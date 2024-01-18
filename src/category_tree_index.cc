@@ -391,37 +391,47 @@ void CategoryTreeIndexWriter::build_weights() {
     read_options.adaptive_readahead = true;
     read_options.total_order_seek = true; // ignore prefix Bloom filter in read
     std::atomic<uint64_t> total_counter{0};
-    std::vector<std::thread> threads;
     const uint64_t n_rows = count_rows();
-    const uint64_t n_rows_per_thread = n_rows / n_threads_;
     LOG(INFO) << "Building weights for " << n_rows << " rows in " << n_threads_
               << " threads...";
-    for (uint32_t i = 0; i < n_threads_; ++i) {
-        threads.emplace_back(
-            [this, i, n_rows_per_thread, read_options, &total_counter]() {
-                auto begin_at = i * n_rows_per_thread;
-                auto end_at = (i + 1) * n_rows_per_thread;
-                std::unique_ptr<rocksdb::Iterator> it{
-                    db_->NewIterator(read_options, categorylinks_cf_)};
-                uint64_t internal_counter = 0;
-                for (it->SeekToFirst();
-                     it->Valid() && internal_counter < begin_at; it->Next())
-                    internal_counter++;
-                for (; it->Valid() &&
-                       (i < (n_threads_ - 1) && internal_counter < end_at);
-                     it->Next(), ++internal_counter) {
-                    std::string_view category_name{it->key().data(),
-                                                   it->key().size()};
-                    const std::uint64_t weight = compute_weight(category_name);
-                    set_weight(category_name, weight);
-                    auto total_counter_result = total_counter.fetch_add(1);
-                    if (total_counter_result % 1'000'000 == 0)
-                        LOG(INFO) << "Built weights for "
-                                  << total_counter_result << " entries so far";
-                }
-                CHECK(it->status().ok()) << it->status().ToString();
-            });
-    }
+    std::vector<std::thread> threads;
+    for (uint64_t thread_num = 0; thread_num < n_threads_; ++thread_num)
+        threads.emplace_back([this, read_options, &total_counter, thread_num,
+                              n_rows]() {
+            // calculate range
+            const uint64_t rows_per_thread = n_rows / n_threads_;
+            const uint64_t rows_per_thread_remainder = n_rows % n_threads_;
+            const uint64_t begin = thread_num * rows_per_thread;
+            const uint64_t end =
+                begin + rows_per_thread +
+                (thread_num == n_threads_ - 1 ? rows_per_thread_remainder : 0);
+            LOG(INFO) << "Launching thread #" << thread_num
+                      << " to build weights for " << rows_per_thread << " / "
+                      << n_rows << " rows";
+            std::unique_ptr<rocksdb::Iterator> it{
+                db_->NewIterator(read_options, categorylinks_cf_)};
+            // advance to start of range
+            it->SeekToFirst();
+            uint64_t internal_count = 0;
+            for (;
+                 it->Valid() && internal_count < (thread_num * rows_per_thread);
+                 ++internal_count)
+                it->Next();
+            for (; it->Valid() && internal_count < end;
+                 it->Next(), ++internal_count) {
+                std::string_view category_name{it->key().data(),
+                                               it->key().size()};
+                const std::uint64_t weight = compute_weight(category_name);
+                set_weight(category_name, weight);
+                if (++total_counter % 1'000'000 == 0)
+                    LOG(INFO) << "Built weights for " << total_counter
+                              << " entries so far";
+            }
+            CHECK(it->status().ok())
+                << "Bad database state. Unable to iterate over "
+                   "category links table: "
+                << it->status().ToString();
+        });
     for (auto &t : threads)
         t.join();
 }
@@ -445,7 +455,11 @@ auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
             continue; // this prevents a cycle
         categories_visited.insert(top);
         auto record = get(top);
-        CHECK(record.has_value());
+        if (!record.has_value())
+            // This means the category has no pages or subcategories. It usually
+            // means all the pages in this category are files. We don't care
+            // about files.
+            continue;
         if (record->weight() > 0) {
             // this category has already been visited, so we can skip the
             // expensive search because we have already computed its weight

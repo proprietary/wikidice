@@ -38,6 +38,7 @@ ABSL_FLAG(std::string, db_path, "", "Path to the database directory");
 ABSL_FLAG(std::string, wikipedia_language_code, "en",
           "Wikipedia language code (e.g., \"en\", \"de\")");
 ABSL_FLAG(uint32_t, threads, 8, "Number of threads to use");
+ABSL_FLAG(bool, skip_import, false, "Skip import and only run the second pass");
 
 namespace {
 
@@ -94,7 +95,6 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
         if (!batch.empty())
             dst.import_categorylinks_rows(batch);
     });
-    consumer_thread.detach();
     SQLDumpParallelProcessor<CategoryLinksParser> parallel_processor(
         categorylinks_dump);
     parallel_processor.set_parallelism(n_threads);
@@ -105,6 +105,7 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
         }
     });
     done = true;
+    consumer_thread.join();
 }
 
 auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
@@ -171,9 +172,12 @@ int main(int argc, char *argv[]) {
             absl::GetFlag(FLAGS_wikipedia_language_code), "_pages")};
     LOG(INFO) << "Creating temporary database for the `page` table at "
               << page_dump_db_path.string() << "...";
-    auto page_table = std::make_shared<WikiPageTable>(page_dump_db_path);
-    parallel_import_page_table(page_table, absl::GetFlag(FLAGS_page_dump),
-                               absl::GetFlag(FLAGS_threads));
+    std::shared_ptr<WikiPageTable> page_table{nullptr};
+    if (!absl::GetFlag(FLAGS_skip_import)) {
+        page_table.reset(new WikiPageTable{page_dump_db_path});
+        parallel_import_page_table(page_table, absl::GetFlag(FLAGS_page_dump),
+                                   absl::GetFlag(FLAGS_threads));
+    }
 
     // Import categorylinks table
     const auto db_destination_path =
@@ -185,9 +189,10 @@ int main(int argc, char *argv[]) {
             absl::GetFlag(FLAGS_threads)};
         LOG(INFO) << "Reading categorylinks table from "
                   << absl::GetFlag(FLAGS_categorylinks_dump) << "...";
-        parallel_import_categorylinks(category_tree_index,
-                                      absl::GetFlag(FLAGS_categorylinks_dump),
-                                      absl::GetFlag(FLAGS_threads));
+        if (!absl::GetFlag(FLAGS_skip_import))
+            parallel_import_categorylinks(
+                category_tree_index, absl::GetFlag(FLAGS_categorylinks_dump),
+                absl::GetFlag(FLAGS_threads));
         LOG(INFO) << "Done reading categorylinks table. Saved to: "
                   << db_destination_path.string();
         LOG(INFO) << "Starting to build weights...";
