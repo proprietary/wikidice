@@ -406,8 +406,12 @@ void CategoryTreeIndexWriter::build_weights() {
                 begin + rows_per_thread +
                 (thread_num == n_threads_ - 1 ? rows_per_thread_remainder : 0);
             LOG(INFO) << "Launching thread #" << thread_num
-                      << " to build weights for " << rows_per_thread << " / "
-                      << n_rows << " rows";
+                      << " to build weights for "
+                      << rows_per_thread * (thread_num + 1) +
+                             ((thread_num == n_threads_ - 1)
+                                  ? rows_per_thread_remainder
+                                  : 0)
+                      << " / " << n_rows << " rows";
             std::unique_ptr<rocksdb::Iterator> it{
                 db_->NewIterator(read_options, categorylinks_cf_)};
             // advance to start of range
