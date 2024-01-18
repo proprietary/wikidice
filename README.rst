@@ -46,6 +46,7 @@ Dependencies:
 - C++20 compiler (GCC 10+ or Clang 10+)
 - CMake 3.24+
 - Zstandard 1.5+
+- Boost 1.83+
 - Python3.12+ including Python development headers
 
 All other dependencies, including RocksDB, are vendored in ``/external`` and built with the CMake project.
@@ -60,9 +61,13 @@ To build:
   cd build
   cmake -DCMAKE_BUILD_TYPE=Release ..
   make
+  ctest
   cd ..
   ./create-database.sh
 
+See ``Dockerfile`` for an example of how to build and run the project. You can
+also use the Dockerfile to build the project and then copy the resulting binary
+out of the Docker image.
 
 Disclaimer
 ==========
