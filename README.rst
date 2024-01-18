@@ -50,18 +50,19 @@ Dependencies:
 
 All other dependencies, including RocksDB, are vendored in ``/external`` and built with the CMake project.
 
-To build::
+To build ::
 
 .. code-block:: bash
+  :caption: Build instructions
 
-  $ git clone https://github.com/proprietary/wikidice.git
-  $ cd wikidice
-  $ mkdir build
-  $ cd build
-  $ cmake -DCMAKE_BUILD_TYPE=Release ..
-  $ make
-  $ cd ..
-  $ ./create-database.sh
+    $ git clone https://github.com/proprietary/wikidice.git
+    $ cd wikidice
+    $ mkdir build
+    $ cd build
+    $ cmake -DCMAKE_BUILD_TYPE=Release ..
+    $ make
+    $ cd ..
+    $ ./create-database.sh
 
 
 Disclaimer
