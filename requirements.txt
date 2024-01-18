@@ -1,0 +1,4 @@
+fastapi==0.108.0
+uvloop>=0.19
+uvicorn==0.13.4
+Cython==3.0.8
