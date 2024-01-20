@@ -20,7 +20,7 @@
 #include <thread>
 #include <utility>
 
-#include "category_link_type.h"
+#include "entities/entities.h"
 #include "file_utils/file_utils.h"
 
 namespace net_zelcon::wikidice {
@@ -78,27 +78,27 @@ class SQLParser : public SQLDumpParserUntypedRows {
 
 class CategoryLinksRowDecompositionStrategy {
   public:
-    using column_type = CategoryLinksRow;
+    using column_type = entities::CategoryLinksRow;
     static constexpr std::string_view table_name = "categorylinks"sv;
 
     static auto
-    decompose(const std::vector<std::string> &row) -> CategoryLinksRow;
+    decompose(const std::vector<std::string> &row) -> entities::CategoryLinksRow;
 };
 
 class CategoryTableRowDecompositionStrategy {
   public:
-    using column_type = CategoryRow;
+    using column_type = entities::CategoryRow;
     static constexpr std::string_view table_name = "category"sv;
 
-    static auto decompose(const std::vector<std::string> &row) -> CategoryRow;
+    static auto decompose(const std::vector<std::string> &row) -> entities::CategoryRow;
 };
 
 class PageRowDecompositionStrategy {
   public:
-    using column_type = PageTableRow;
+    using column_type = entities::PageTableRow;
     static constexpr std::string_view table_name = "page"sv;
 
-    static auto decompose(const std::vector<std::string> &row) -> PageTableRow;
+    static auto decompose(const std::vector<std::string> &row) -> entities::PageTableRow;
 };
 
 class CategoryLinksParser
@@ -124,7 +124,7 @@ class CategoryParser : public SQLParser<CategoryTableRowDecompositionStrategy> {
 };
 
 auto read_category_table(std::istream &stream)
-    -> absl::flat_hash_map<std::uint64_t, CategoryRow>;
+    -> absl::flat_hash_map<std::uint64_t, entities::CategoryRow>;
 
 template <ColumnDecompositionStrategy T>
 auto SQLParser<T>::next() -> std::optional<typename T::column_type> {

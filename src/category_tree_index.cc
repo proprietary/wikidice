@@ -1,4 +1,5 @@
 #include "category_tree_index.h"
+#include "entities/entities.h"
 #include "primitive_serializer.h"
 
 #include <absl/log/check.h>
@@ -20,8 +21,7 @@
 
 namespace net_zelcon::wikidice {
 
-auto CategoryTreeIndexWriter::categorylinks_cf_options() const
-    -> rocksdb::ColumnFamilyOptions {
+auto CategoryTreeIndexWriter::categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions {
     rocksdb::ColumnFamilyOptions cf_options;
     // add merge operator to merge CategoryLinkRecords
     cf_options.merge_operator.reset(new CategoryLinkRecordMergeOperator);
@@ -125,7 +125,7 @@ void CategoryTreeIndex::run_compaction() {
     db_->CompactRange(compact_options, categorylinks_cf_, nullptr, nullptr);
 }
 
-auto CategoryTreeIndex::category_name_of(CategoryId category_id)
+auto CategoryTreeIndex::category_name_of(entities::CategoryId category_id)
     -> std::optional<std::string> {
     auto ser = primitive_serializer::serialize_u64(category_id);
     rocksdb::Slice key{reinterpret_cast<const char *>(ser.data()), ser.size()};
@@ -148,7 +148,7 @@ auto CategoryTreeIndex::category_name_of(CategoryId category_id)
     return value.ToString();
 }
 
-auto CategoryTreeIndexWriter::category_name_of(CategoryId category_id)
+auto CategoryTreeIndexWriter::category_name_of(entities::CategoryId category_id)
     -> std::optional<std::string> {
     const auto category_row = category_table_->find(category_id);
     if (!category_row) {
@@ -174,7 +174,7 @@ auto CategoryTreeIndex::map_categories(absl::Span<const uint64_t> src)
 }
 
 auto CategoryTreeIndex::get(std::string_view category_name)
-    -> std::optional<CategoryLinkRecord> {
+    -> std::optional<entities::CategoryLinkRecord> {
     // 1. Retrieve from RocksDB database
     rocksdb::Slice key{category_name.data(), category_name.length()};
     rocksdb::PinnableSlice value;
@@ -192,10 +192,10 @@ auto CategoryTreeIndex::get(std::string_view category_name)
         << "Failed to get category_name: " << category_name
         << " status: " << status.ToString();
     // 2. Deserialize
-    msgpack::zone zone;
-    const auto o = msgpack::unpack(zone, value.data(), value.size());
-    CHECK(!o.is_nil());
-    return o.as<CategoryLinkRecord>();
+    std::span<const uint8_t> data {reinterpret_cast<const uint8_t*>(value.data()), value.size()};
+    entities::CategoryLinkRecord output;
+    entities::deserialize(output, data);
+    return output;
 }
 
 CategoryTreeIndexWriter::CategoryTreeIndexWriter(
@@ -205,42 +205,41 @@ CategoryTreeIndexWriter::CategoryTreeIndexWriter(
     : CategoryTreeIndex(db_path), category_table_{category_table},
       wiki_page_table_{wiki_page_table}, n_threads_{n_threads} {
     category_table_->for_each(
-        [this](const CategoryRow &row) { import_category_row(row); });
+        [this](const entities::CategoryRow &row) { import_category_row(row); });
     db_->CompactRange(rocksdb::CompactRangeOptions{}, category_id_to_name_cf_,
                       nullptr, nullptr);
 }
 
 auto CategoryTreeIndexWriter::set(std::string_view category_name,
-                                  const CategoryLinkRecord &record) -> void {
+                                  const entities::CategoryLinkRecord &record) -> void {
     // 1. Serialize
-    msgpack::sbuffer buf;
-    msgpack::pack(buf, record);
-    rocksdb::Slice value{buf.data(), buf.size()};
-    rocksdb::Slice key{category_name.data(), category_name.size()};
+    std::stringstream buf;
+    entities::serialize(buf, record);
+    rocksdb::Slice value {std::move(buf).str()};
     // 2. Add to RocksDB database
     rocksdb::WriteOptions write_options;
-    auto status = db_->Put(write_options, categorylinks_cf_, key, value);
+    auto status = db_->Put(write_options, categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Write of record failed: " << status.ToString();
 }
 
 void CategoryTreeIndexWriter::import_categorylinks_row(
-    const CategoryLinksRow &row) {
-    std::vector<CategoryLinksRow> rows{row};
+    const entities::CategoryLinksRow &row) {
+    std::vector<entities::CategoryLinksRow> rows{row};
     import_categorylinks_rows(rows);
 }
 
 void CategoryTreeIndexWriter::import_categorylinks_rows(
-    const std::vector<const CategoryLinksRow *> &rows) {
+    const std::vector<const entities::CategoryLinksRow *> &rows) {
     rocksdb::WriteBatch batch;
     for (const auto &row : rows) {
         switch (row->page_type) {
-        case CategoryLinkType::FILE:
+        case entities::CategoryLinkType::FILE:
             // ignore; we are not indexing files
             break;
-        case CategoryLinkType::PAGE:
+        case entities::CategoryLinkType::PAGE:
             add_page(batch, row->category_name, row->page_id);
             break;
-        case CategoryLinkType::SUBCAT: {
+        case entities::CategoryLinkType::SUBCAT: {
             auto subcategory_id = page_id_to_category_id(row->page_id);
             if (subcategory_id)
                 add_subcategory(batch, row->category_name,
@@ -257,17 +256,17 @@ void CategoryTreeIndexWriter::import_categorylinks_rows(
 }
 
 void CategoryTreeIndexWriter::import_categorylinks_rows(
-    const std::vector<CategoryLinksRow> &rows) {
-    std::vector<const CategoryLinksRow *> ptrs;
+    const std::vector<entities::CategoryLinksRow> &rows) {
+    std::vector<const entities::CategoryLinksRow *> ptrs;
     ptrs.reserve(rows.size());
     for (size_t i = 0; i < rows.size(); ++i) {
-        const CategoryLinksRow *row = &rows[i];
+        const entities::CategoryLinksRow *row = &rows[i];
         ptrs.push_back(row);
     }
     import_categorylinks_rows(ptrs);
 }
 
-void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
+void CategoryTreeIndexWriter::import_category_row(const entities::CategoryRow &row) {
     // 1. Serialize
     const auto category_id =
         primitive_serializer::serialize_u64(row.category_id);
@@ -282,24 +281,24 @@ void CategoryTreeIndexWriter::import_category_row(const CategoryRow &row) {
 
 void CategoryTreeIndexWriter::add_subcategory(
     rocksdb::WriteBatch &batch, const std::string_view category_name,
-    const CategoryId subcategory_id) {
-    CategoryLinkRecord new_record{};
+    const entities::CategoryId subcategory_id) {
+    entities::CategoryLinkRecord new_record{};
     new_record.subcategories_mut().push_back(subcategory_id);
-    msgpack::sbuffer buf;
-    msgpack::pack(buf, new_record);
-    rocksdb::Slice value{buf.data(), buf.size()};
+    std::stringstream buf;
+    entities::serialize(buf, new_record);
+    rocksdb::Slice value{std::move(buf).str()};
     auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
 
 void CategoryTreeIndexWriter::add_page(rocksdb::WriteBatch &batch,
                                        const std::string_view category_name,
-                                       const PageId page_id) {
-    CategoryLinkRecord new_record{};
+                                       const entities::PageId page_id) {
+    entities::CategoryLinkRecord new_record{};
     new_record.pages_mut().push_back(page_id);
-    msgpack::sbuffer buf;
-    msgpack::pack(buf, new_record);
-    rocksdb::Slice value{buf.data(), buf.size()};
+    std::stringstream buf;
+    entities::serialize(buf, new_record);
+    rocksdb::Slice value{std::move(buf).str()};
     auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
@@ -322,62 +321,33 @@ auto CategoryTreeIndex::lookup_subcats(std::string_view category_name)
         return {};
 }
 
-auto CategoryTreeIndex::lookup_weight(std::string_view category_name)
-    -> std::optional<std::uint64_t> {
-    auto record = get(category_name);
-    if (record)
-        return record->weight();
-    else
-        return std::nullopt;
-}
-
-void CategoryTreeIndexWriter::set_weight(const std::string_view category_name,
-                                         const std::uint64_t weight) {
-    CategoryLinkRecord new_record{};
-    new_record.weight(weight);
-    msgpack::sbuffer buf;
-    msgpack::pack(buf, new_record);
-    rocksdb::Slice value{buf.data(), buf.size()};
-    rocksdb::WriteOptions write_options;
-    auto status =
-        db_->Merge(write_options, categorylinks_cf_, category_name, value);
-    CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
-}
-
-auto CategoryTreeIndexReader::pick(std::string_view category_name,
-                                   absl::BitGenRef random_generator)
-    -> std::optional<PageId> {
-    const auto weight = lookup_weight(category_name);
-    if (!weight) {
-        return std::nullopt;
-    }
-    const auto picked =
-        absl::Uniform<std::uint64_t>(random_generator, 0UL, weight.value());
-    return at_index(category_name, picked);
-}
-
 auto CategoryTreeIndex::at_index(std::string_view category_name,
-                                 std::uint64_t index) -> PageId {
+                                 std::uint64_t index, uint8_t depth) -> entities::PageId {
     auto record = get(category_name);
-    if (!record)
+    if (!record) {
         LOG(WARNING) << "category_name: " << category_name
                      << " not found in `categorylinks` column family";
+        return 0;
+    }
     const auto &pages = record->pages();
     if (index < pages.size()) {
         return pages[index];
     }
     index -= pages.size();
     for (const auto &subcat : map_categories(record->subcategories())) {
-        const auto weight = lookup_weight(subcat);
-        if (!weight.has_value()) {
+        const auto cat_details = get(subcat);
+        if (!cat_details) {
             LOG(WARNING) << "category_name: " << subcat
                          << " not found in `categorylinks` column family";
             continue;
         }
-        if (index < weight.value()) {
-            return at_index(subcat, index);
+        auto weight_at_depth = cat_details->weight_at_depth(depth);
+        if (!weight_at_depth)
+            weight_at_depth.value() = compute_weight(category_name, depth);
+        if (index < weight_at_depth.value()) {
+            return at_index(subcat, index, depth);
         }
-        index -= weight.value();
+        index -= weight_at_depth.value();
     }
     LOG(WARNING) << "index: " << index
                  << " out of range for category_name: " << category_name;
@@ -386,7 +356,7 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
 
 // Run second-pass to build the "weights" column family, which consists of the
 // recursive sum of all the pages under a category.
-void CategoryTreeIndexWriter::build_weights() {
+void CategoryTreeIndexWriter::build_weights(const uint8_t depth_begin, const uint8_t depth_end) {
     rocksdb::ReadOptions read_options;
     read_options.adaptive_readahead = true;
     read_options.total_order_seek = true; // ignore prefix Bloom filter in read
@@ -397,7 +367,7 @@ void CategoryTreeIndexWriter::build_weights() {
     std::vector<std::thread> threads;
     for (uint64_t thread_num = 0; thread_num < n_threads_; ++thread_num)
         threads.emplace_back([this, read_options, &total_counter, thread_num,
-                              n_rows]() {
+                              n_rows, depth_begin, depth_end]() {
             // calculate range
             const uint64_t rows_per_thread = n_rows / n_threads_;
             const uint64_t rows_per_thread_remainder = n_rows % n_threads_;
@@ -425,8 +395,10 @@ void CategoryTreeIndexWriter::build_weights() {
                  it->Next(), ++internal_count) {
                 std::string_view category_name{it->key().data(),
                                                it->key().size()};
-                const std::uint64_t weight = compute_weight(category_name);
-                set_weight(category_name, weight);
+                for (auto depth = depth_begin; depth <= depth_end; ++depth) {
+                    const std::uint64_t weight = compute_weight(category_name, depth);
+                    set_weight(category_name, entities::CategoryWeight{depth, weight});
+                }
                 if (++total_counter % 1'000'000 == 0)
                     LOG(INFO) << "Built weights for " << total_counter
                               << " entries so far";
@@ -440,18 +412,18 @@ void CategoryTreeIndexWriter::build_weights() {
         t.join();
 }
 
-auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
-                                             float max_depth) -> std::uint64_t {
+auto CategoryTreeIndex::compute_weight(std::string_view category_name,
+                                       uint8_t max_depth) -> std::uint64_t {
     uint64_t weight = 0;
     if (!get(category_name)) {
         LOG(WARNING) << "category name: " << std::quoted(category_name)
-                     << "not found in `categorylinks` column family";
+                     << " not found in `categorylinks` column family";
         return weight;
     }
     std::unordered_set<std::string> categories_visited;
     std::queue<std::string> categories_to_visit;
     categories_to_visit.emplace(category_name);
-    float depth = 0.;
+    uint8_t depth = 0;
     while (!categories_to_visit.empty() && depth <= max_depth) {
         const auto top = categories_to_visit.front();
         categories_to_visit.pop();
@@ -464,28 +436,22 @@ auto CategoryTreeIndexWriter::compute_weight(std::string_view category_name,
             // means all the pages in this category are files. We don't care
             // about files.
             continue;
-        if (record->weight() > 0) {
-            // this category has already been visited, so we can skip the
-            // expensive search because we have already computed its weight
-            weight += record->weight();
-        } else {
-            // add number of pages in this category to "weight"
-            weight += record->pages().size();
-            // enqueue the subcategories of this category
-            for (const auto &subcat : record->subcategories()) {
-                auto subcat_name = category_name_of(subcat);
-                CHECK(subcat_name.has_value());
-                categories_to_visit.push(subcat_name.value());
-            }
+        // add number of pages in this category to "weight"
+        weight += record->pages().size();
+        // enqueue the subcategories of this category
+        for (const auto &subcat : record->subcategories()) {
+            auto subcat_name = category_name_of(subcat);
+            CHECK(subcat_name.has_value());
+            categories_to_visit.push(subcat_name.value());
         }
         // increment depth
-        depth += 1.0f;
+        depth += 1;
     }
     return weight;
 }
 
-auto CategoryTreeIndexWriter::page_id_to_category_id(PageId page_id)
-    -> std::optional<CategoryId> {
+auto CategoryTreeIndexWriter::page_id_to_category_id(entities::PageId page_id)
+    -> std::optional<entities::CategoryId> {
     auto page_row = wiki_page_table_->find(page_id);
     if (!page_row)
         return std::nullopt;
@@ -499,10 +465,12 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
     // perform manual compaction
     db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
                       nullptr, nullptr);
+    LOG(INFO) << "Pruning the dangling subcategories (subcategories that do not have real _article_ (not file) pages underneath them)...";
+    prune_dangling_subcategories();
     // build the "weights" (the number of leaf nodes (pages) under a category)
     LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
                  "under a category)...";
-    build_weights();
+    build_weights(DEPTH_BEGIN, DEPTH_END);
     // flush the write buffer
     LOG(INFO) << "Flushing RocksDB write buffer...";
     rocksdb::FlushOptions flush_options;
@@ -538,18 +506,19 @@ auto CategoryTreeIndexReader::search_categories(
 }
 
 auto CategoryTreeIndexReader::for_each(
-    std::function<bool(std::string_view, const CategoryLinkRecord &)> consumer)
+    std::function<bool(std::string_view, const entities::CategoryLinkRecord &)> consumer)
     -> void {
     rocksdb::ReadOptions read_options;
     read_options.total_order_seek = true;
     std::unique_ptr<rocksdb::Iterator> it{
         db_->NewIterator(read_options, categorylinks_cf_)};
-    CategoryLinkRecord record{};
+    entities::CategoryLinkRecord record{};
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string_view category_name{it->key().data(), it->key().size()};
-        msgpack::zone zone;
-        msgpack::unpack(zone, it->value().data(), it->value().size())
-            .convert(record);
+        entities::deserialize(record, std::span<const uint8_t>{
+                                          reinterpret_cast<const uint8_t *>(
+                                              it->value().data()),
+                                          it->value().size()});
         const bool keep_going = consumer(category_name, record);
         if (!keep_going)
             break;
@@ -561,30 +530,30 @@ bool CategoryLinkRecordMergeOperator::Merge(
     const rocksdb::Slice &value, std::string *new_value,
     rocksdb::Logger *) const {
     if (existing_value) {
-        msgpack::zone zone;
-        auto existing_record = msgpack::unpack(zone, existing_value->data(),
-                                               existing_value->size())
-                                   .as<CategoryLinkRecord>();
-        zone.clear();
-        auto new_record = msgpack::unpack(zone, value.data(), value.size())
-                              .as<CategoryLinkRecord>();
-        new_record += existing_record;
-        msgpack::sbuffer sbuf;
-        msgpack::pack(sbuf, new_record);
-        new_value->assign(sbuf.data(), sbuf.size());
+        entities::CategoryLinkRecord existing_record;
+        entities::deserialize(existing_record, std::span<const uint8_t>{reinterpret_cast<const uint8_t *>(existing_value->data()), existing_value->size()});
+        entities::CategoryLinkRecord new_record;
+        entities::deserialize(new_record, std::span<const uint8_t>{
+                                                reinterpret_cast<const uint8_t *>(
+                                                    value.data()),
+                                                value.size()});
+        new_record += std::move(existing_record);
+        std::stringstream sbuf;
+        entities::serialize(sbuf, new_record);
+        new_value->assign(std::move(sbuf).str());
     } else {
         new_value->assign(value.data(), value.size());
     }
     return true;
 }
 
-auto CategoryTreeIndex::to_string(const CategoryLinkRecord &record)
+auto CategoryTreeIndex::to_string(const entities::CategoryLinkRecord &record)
     -> std::string {
     auto subcat_names = map_categories(record.subcategories());
     return fmt::format("CategoryLinkRecord: pages = {}, subcategories = {}, "
-                       "subcategories (nums) = {}, weight = {}",
+                       "subcategories (nums) = {}, weights = {}",
                        record.pages(), subcat_names, record.subcategories(),
-                       record.weight());
+                       entities::to_string(record.weights().begin(), record.weights().end()));
 }
 
 auto CategoryTreeIndex::count_rows() -> uint64_t {
@@ -609,6 +578,55 @@ auto CategoryTreeIndexWriter::count_rows() -> uint64_t {
         return categorylinks_count_.load();
     }
     return CategoryTreeIndex::count_rows();
+}
+
+auto CategoryTreeIndexReader::pick_at_depth(std::string_view category_name,
+                                            uint8_t depth, absl::BitGenRef gen)
+    -> std::optional<entities::PageId> {
+    const auto weight = compute_weight(category_name, depth);
+    auto picked = absl::Uniform<std::uint64_t>(gen, 0UL, weight);
+    return at_index(category_name, picked, depth);
+}
+
+auto CategoryTreeIndexWriter::set_weight(std::string_view category_name, const entities::CategoryWeight& weight) -> void {
+    auto record = get(category_name);
+    if (!record)
+        return;
+    std::sort(record->weights_mut().begin(), record->weights_mut().end(),
+        [](const auto& lhs, const auto& rhs) { return lhs.depth < rhs.depth; });
+    auto insertion_point = std::lower_bound(record->weights_mut().begin(), record->weights_mut().end(), weight, [](const auto& lhs, const auto& rhs) { return lhs.depth < rhs.depth; });
+    if (insertion_point == record->weights_mut().end() || insertion_point->depth != weight.depth)
+        record->weights_mut().insert(insertion_point, weight);
+    else if (insertion_point->depth == weight.depth)
+        *insertion_point = weight;
+    DCHECK(std::is_sorted(record->weights().begin(), record->weights().end(), [](const auto& lhs, const auto& rhs) { return lhs.depth < rhs.depth; }));
+}
+
+auto CategoryTreeIndexWriter::prune_dangling_subcategories() -> void {
+    // This removes the subcategories that only have "file" pages in them. This
+    // is because we don't care about files. No one wants to see a file when
+    // they ask for a random article.
+    rocksdb::ReadOptions read_options;
+    read_options.total_order_seek = true;
+    std::unique_ptr<rocksdb::Iterator> it{db_->NewIterator(read_options, categorylinks_cf_)};
+    bool unchanged = true;
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        std::string_view category_name{it->key().data(), it->key().size()};
+        entities::CategoryLinkRecord record;
+        std::span<const uint8_t> value {reinterpret_cast<const uint8_t*>(it->value().data()), it->value().size()};
+        entities::deserialize(record, value);
+        for (auto subcat_it = std::begin(record.subcategories_mut()); subcat_it != std::end(record.subcategories_mut());) {
+            const auto subcategory_name = category_name_of(*subcat_it);
+            if (!subcategory_name || !get(*subcategory_name)) {
+                subcat_it = record.subcategories_mut().erase(subcat_it);
+                unchanged = false;
+            } else {
+                subcat_it++;
+            }
+        }
+        if (!unchanged)
+            set(category_name, record);
+    }
 }
 
 } // namespace net_zelcon::wikidice

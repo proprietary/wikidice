@@ -29,7 +29,7 @@ auto WikiPageTable::operator=(WikiPageTable &&other) -> WikiPageTable & {
     return *this;
 }
 
-auto WikiPageTable::add_page(const PageTableRow &page_row) -> void {
+auto WikiPageTable::add_page(const entities::PageTableRow &page_row) -> void {
     if (page_row.is_redirect || page_row.page_id == 0 ||
         page_row.page_title.empty())
         return;
@@ -41,7 +41,7 @@ auto WikiPageTable::add_page(const PageTableRow &page_row) -> void {
     CHECK(status.ok()) << status.ToString();
 }
 
-auto WikiPageTable::find(const PageId page_id) -> std::optional<PageTableRow> {
+auto WikiPageTable::find(const entities::PageId page_id) -> std::optional<entities::PageTableRow> {
     auto page_id_serialized = primitive_serializer::serialize_u64(page_id);
     rocksdb::Slice key(
         reinterpret_cast<const char *>(page_id_serialized.data()),
@@ -53,7 +53,7 @@ auto WikiPageTable::find(const PageId page_id) -> std::optional<PageTableRow> {
         return std::nullopt;
     }
     CHECK(status.ok()) << status.ToString();
-    return PageTableRow{page_id, page_title, false};
+    return entities::PageTableRow{page_id, page_title, false};
 }
 
 } // namespace net_zelcon::wikidice

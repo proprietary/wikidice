@@ -76,6 +76,7 @@ find_lto(CXX)
 # project
 
 add_subdirectory(src/file_utils)
+add_subdirectory(src/entities)
 
 add_library(
     cross_platform_compat
@@ -123,18 +124,6 @@ target_compile_features(primitive_serializer PRIVATE cxx_std_23)
 target_compile_options(primitive_serializer PRIVATE -Wall -Wextra -Werror)
 target_link_options(primitive_serializer PRIVATE -fuse-ld=lld)
 
-add_library(category_link_type STATIC)
-target_sources(
-    category_link_type
-    PRIVATE
-    src/category_link_type.h
-    src/category_link_type.cc
-    PUBLIC
-    src/category_link_type.h
-)
-target_compile_features(category_link_type PRIVATE cxx_std_23)
-target_compile_options(category_link_type PRIVATE -Wall -Wextra -Werror)
-
 add_library(
     sql_parser
     STATIC
@@ -151,12 +140,12 @@ target_link_libraries(
     sql_parser
     PUBLIC
     file_utils
+    entities
     bounded_string_ring
     absl::log absl::check
     fmt::fmt
     boost_headers
     absl::flat_hash_map
-    category_link_type
 )
 target_compile_features(
     sql_parser
@@ -185,7 +174,7 @@ target_sources(
 target_link_libraries(
     wiki_page_table
     PUBLIC
-    category_link_type
+    entities
     rocksdb-compiled
     PRIVATE
     absl::log absl::check
@@ -202,12 +191,37 @@ target_compile_options(
     -Wall -Wextra -Werror
 )
 
+add_library(
+    category_table
+    STATIC
+)
+target_sources(
+    category_table
+    PRIVATE
+    src/category_table.cc
+    PUBLIC
+    src/category_table.h
+)
+target_link_libraries(
+    category_table
+    PUBLIC
+    absl::flat_hash_map
+)
+target_compile_features(
+    category_table
+    PRIVATE
+    cxx_std_23
+)
+target_compile_options(
+    category_table
+    PRIVATE
+    -Wall -Wextra -Werror
+)
 
 add_library(wikidice STATIC)
 target_sources(
     wikidice
     PRIVATE
-    src/category_table.h src/category_table.cc
     src/category_tree_index.h src/category_tree_index.cc
     src/wikidice_query.h src/wikidice_query.cc
     PUBLIC
@@ -234,7 +248,8 @@ target_link_libraries(
     PUBLIC
     cross_platform_compat
     primitive_serializer
-    category_link_type
+    entities
+    category_table
     wiki_page_table
     fmt::fmt Threads::Threads boost_headers
     absl::flags absl::flags_parse
@@ -243,7 +258,6 @@ target_link_libraries(
     absl::random_random absl::random_bit_gen_ref
     absl::btree absl::flat_hash_map absl::flat_hash_set absl::node_hash_map absl::node_hash_set
     absl::span
-    msgpack-cxx
     rocksdb-compiled
 )
 
@@ -330,7 +344,7 @@ target_link_options(
 target_link_libraries(
     category_tree_index_test
     PUBLIC
-    gtest_main gmock_main gmock wikidice
+    gtest_main gmock_main gmock wikidice entities category_table
 )
 
 add_executable(primitive_serializer_test src/primitive_serializer_test.cc)

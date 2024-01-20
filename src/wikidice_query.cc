@@ -5,9 +5,9 @@
 
 namespace net_zelcon::wikidice {
 
-auto Session::pick_random_article(std::string_view category_name)
+auto Session::pick_random_article(std::string_view category_name, uint8_t depth)
     -> std::pair<uint64_t, bool> {
-    const auto article = index_->pick(category_name, rng_);
+    const auto article = index_->pick_at_depth(category_name, depth, rng_);
     if (article) {
         return std::make_pair(*article, true);
     } else {
@@ -23,7 +23,7 @@ auto Session::autocomplete_category_name(std::string_view category_name)
 auto Session::take(uint64_t n) -> std::vector<std::string> {
     std::vector<std::string> dst;
     index_->for_each([&dst, &n](std::string_view category_name,
-                                const CategoryLinkRecord &record) -> bool {
+                                const entities::CategoryLinkRecord &record) -> bool {
         if (n-- == 0)
             return false;
         dst.push_back(fmt::format("category name: {}, subcats={}",

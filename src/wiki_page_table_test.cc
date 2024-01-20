@@ -27,7 +27,7 @@ class WikiPageTableTest : public ::testing::Test {
 
 TEST_F(WikiPageTableTest, AddPage) {
     // Create a sample PageTableRow
-    PageTableRow page_row;
+    entities::PageTableRow page_row;
     page_row.page_id = 1ULL;
     page_row.page_title = "Test Page";
     page_row.is_redirect = false;

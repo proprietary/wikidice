@@ -156,6 +156,7 @@ TEST(SQLParser, Simple) {
 }
 
 TEST(SQLParser, CategoryLinksParser) {
+    using entities::CategoryLinkType;
     std::istringstream stream(categorylinks_head);
     CategoryLinksParser iter{stream};
     iter.skip_header();
@@ -404,7 +405,7 @@ TEST(PageTable, TestRealDump) {
     std::ifstream stream{page_dump_sql};
     PageTableParser iter{stream};
     iter.skip_header();
-    std::optional<PageTableRow> row = std::nullopt;
+    std::optional<entities::PageTableRow> row = std::nullopt;
     uint64_t row_count = 0;
     while (true) {
         ASSERT_NO_THROW(row = iter.next());

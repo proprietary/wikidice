@@ -6,14 +6,14 @@
 #include <rocksdb/db.h>
 #include <string>
 
-#include "category_link_type.h"
+#include "entities/entities.h"
 
 namespace net_zelcon::wikidice {
 
 class WikiPageTable {
   public:
-    auto add_page(const PageTableRow &page_row) -> void;
-    auto find(const PageId) -> std::optional<PageTableRow>;
+    auto add_page(const entities::PageTableRow &page_row) -> void;
+    auto find(const entities::PageId) -> std::optional<entities::PageTableRow>;
     explicit WikiPageTable(const std::filesystem::path &);
     ~WikiPageTable();
     WikiPageTable() = delete;

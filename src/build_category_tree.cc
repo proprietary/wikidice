@@ -21,8 +21,9 @@
 #include <vector>
 
 #include "build_category_tree.h"
-#include "category_table.h"
 #include "category_tree_index.h"
+#include "entities/entities.h"
+#include "category_table.h"
 #include "sql_parser.h"
 #include "wiki_page_table.h"
 
@@ -69,13 +70,13 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
               << n_threads << " threads...";
     std::atomic<bool> done{false};
     constexpr static size_t kBatchSize = 1'000'000;
-    MPSCBlockingQueue<CategoryLinksRow *> queue{kBatchSize * 2};
+    MPSCBlockingQueue<entities::CategoryLinksRow *> queue{kBatchSize * 2};
     std::thread consumer_thread([&dst, &queue, &done]() {
         uint64_t counter = 0;
-        std::vector<const CategoryLinksRow *> batch;
+        std::vector<const entities::CategoryLinksRow *> batch;
         batch.reserve(kBatchSize);
         while (!done || !queue.empty()) {
-            CategoryLinksRow *t = queue.pop();
+            entities::CategoryLinksRow *t = queue.pop();
             batch.push_back(t);
             if (batch.size() >= kBatchSize) {
                 dst.import_categorylinks_rows(batch);
@@ -100,8 +101,8 @@ auto parallel_import_categorylinks(CategoryTreeIndexWriter &dst,
     parallel_processor.set_parallelism(n_threads);
     parallel_processor([&queue](CategoryLinksParser &parser) {
         LOG(INFO) << "Starting thread...";
-        while (std::optional<CategoryLinksRow> row = parser.next()) {
-            queue.push(new CategoryLinksRow{row.value()});
+        while (std::optional<entities::CategoryLinksRow> row = parser.next()) {
+            queue.push(new entities::CategoryLinksRow{row.value()});
         }
     });
     done = true;
@@ -117,7 +118,7 @@ auto parallel_import_page_table(std::shared_ptr<WikiPageTable> dst,
     SQLDumpParallelProcessor<PageTableParser> parallel_processor(page_dump);
     parallel_processor.set_parallelism(n_threads);
     parallel_processor([&dst, &counter](PageTableParser &parser) {
-        while (std::optional<PageTableRow> row = parser.next()) {
+        while (std::optional<entities::PageTableRow> row = parser.next()) {
             dst->add_page(row.value());
             auto count_result = counter.fetch_add(1);
             LOG_IF(INFO, count_result % 1'000'000 == 0)

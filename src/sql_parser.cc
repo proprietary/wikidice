@@ -191,21 +191,21 @@ auto SQLDumpParserUntypedRows::split_offsets(uint32_t n_partitions)
 }
 
 auto CategoryLinksRowDecompositionStrategy::decompose(
-    const std::vector<std::string> &row) -> CategoryLinksRow {
+    const std::vector<std::string> &row) -> entities::CategoryLinksRow {
     CHECK_EQ(7ULL, row.size())
         << fmt::format("expected 7 columns, got {} in : {}", row.size(), row);
-    CategoryLinksRow result;
+    entities::CategoryLinksRow result;
     result.category_name = row.at(1);
     result.page_id = std::stoull(row.at(0));
-    result.page_type = from(row.back());
+    result.page_type = entities::from(row.back());
     return result;
 }
 
 auto CategoryTableRowDecompositionStrategy::decompose(
-    const std::vector<std::string> &row) -> CategoryRow {
+    const std::vector<std::string> &row) -> entities::CategoryRow {
     CHECK_EQ(5ULL, row.size())
         << "row has " << row.size() << " elements: " << fmt::format("{}", row);
-    CategoryRow result;
+    entities::CategoryRow result;
     result.category_id = std::stoull(row.at(0));
     result.category_name = row.at(1);
     result.page_count = std::stoi(row.at(2));
@@ -214,13 +214,13 @@ auto CategoryTableRowDecompositionStrategy::decompose(
 }
 
 auto PageRowDecompositionStrategy::decompose(
-    const std::vector<std::string> &row) -> PageTableRow {
+    const std::vector<std::string> &row) -> entities::PageTableRow {
     CHECK_EQ(12ULL, row.size())
         << fmt::format("Expected 12 rows in page table row, but got {} in: {}",
                        row.size(), row);
     CHECK(row.at(3) == "0" || row.at(3) == "1") << fmt::format(
         "Expected 0 or 1 in page table row, but got {} in: {}", row.at(3), row);
-    PageTableRow result;
+    entities::PageTableRow result;
     result.is_redirect = row.at(3) == "1";
     result.page_id = std::stoull(row.at(0));
     result.page_title = row.at(2);
@@ -228,8 +228,8 @@ auto PageRowDecompositionStrategy::decompose(
 }
 
 auto read_category_table(std::istream &stream)
-    -> absl::flat_hash_map<std::uint64_t, CategoryRow> {
-    absl::flat_hash_map<std::uint64_t, CategoryRow> result;
+    -> absl::flat_hash_map<std::uint64_t, entities::CategoryRow> {
+    absl::flat_hash_map<std::uint64_t, entities::CategoryRow> result;
     CategoryParser parser{stream};
     while (true) {
         auto row = parser.next();
