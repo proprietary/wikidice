@@ -62,13 +62,24 @@ class CategoryLinkRecord {
     auto weights() const noexcept -> const std::vector<CategoryWeight>& { return weights_; }
     auto weights_mut() noexcept -> std::vector<CategoryWeight>& { return weights_; }
 
-    auto weight_at_depth(uint8_t depth) const noexcept -> std::optional<uint64_t> {
-        for (const auto& weight : weights_) {
-            if (weight.depth == depth) {
-                return weight.weight;
+    auto weight_at_depth(uint8_t depth) const noexcept -> uint64_t {
+        const auto len = weights_.size();
+        if (len == 0) {
+            return 0; // errored
+        }
+        size_t l = 0;
+        size_t r = len - 1;
+        while (l < r) {
+            const auto m = (l + r) / 2;
+            if (weights_[m].depth == depth) {
+                return weights_[m].weight;
+            } else if (weights_[m].depth < depth) {
+                l = m + 1;
+            } else if (weights_[m].depth > depth) {
+                r = m - 1;
             }
         }
-        return std::nullopt; // means this category has no precomputed weight at this depth
+        return weights_.back().weight;
     }
 
     friend bool operator==(const CategoryLinkRecord &lhs,

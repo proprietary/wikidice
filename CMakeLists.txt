@@ -284,6 +284,28 @@ target_link_libraries(
     absl::log absl::check absl::log_flags
 )
 
+add_executable(wikidice_reader src/wikidice_reader.cc)
+target_compile_features(wikidice_reader PRIVATE cxx_std_23)
+target_compile_options(
+    wikidice_reader
+    PRIVATE
+    -Wall -Wextra -Werror
+    -fsanitize=undefined,address -fno-omit-frame-pointer
+)
+target_link_options(
+    wikidice_reader
+    PRIVATE
+    -fsanitize=undefined,address
+)
+target_link_libraries(
+    wikidice_reader
+    PUBLIC
+    wikidice
+    absl::flags absl::flags_parse absl::flags_usage
+    absl::log absl::check absl::log_flags 
+    absl::flat_hash_map
+)
+
 # Python module
 pybind11_add_module(pywikidice src/pywikidice.cc)
 target_compile_features(pywikidice PRIVATE cxx_std_23)

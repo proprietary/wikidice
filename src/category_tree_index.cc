@@ -351,12 +351,12 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
             continue;
         }
         auto weight_at_depth = cat_details->weight_at_depth(depth);
-        if (!weight_at_depth)
-            weight_at_depth.value() = compute_weight(category_name, depth);
-        if (index < weight_at_depth.value()) {
+        if (weight_at_depth == 0)
+            weight_at_depth = compute_weight(category_name, depth);
+        if (index < weight_at_depth) {
             return at_index(subcat, index, depth);
         }
-        index -= weight_at_depth.value();
+        index -= weight_at_depth;
     }
     LOG(WARNING) << "index: " << index
                  << " out of range for category_name: " << category_name;
@@ -369,16 +369,25 @@ auto CategoryTreeIndexWriter::build_weights(
     std::vector<entities::CategoryWeight> weights;
     weights.reserve(depth_end - depth_begin + 1);
     auto depth = depth_begin;
+    static constexpr size_t kStopIfRepeatedNTimes = 1;
     for (; depth <= depth_end; ++depth) {
         entities::CategoryWeight weight;
         weight.weight = compute_weight(category_name, depth);
         weight.depth = depth;
-        if (depth > depth_begin && weight.weight == weights.back().weight)
+        if (depth > (depth_begin + kStopIfRepeatedNTimes) &&
+            std::all_of(weights.rbegin(),
+                        weights.rbegin() + kStopIfRepeatedNTimes,
+                        [&weights](const auto &w) {
+                            return w.weight == weights.back().weight;
+                        }))
             break;
         weights.push_back(weight);
     }
-    for (; depth <= depth_end && !weights.empty(); ++depth)
-        weights.push_back(weights.back());
+    for (; depth <= depth_end && !weights.empty(); ++depth) {
+        auto prev = weights.back();
+        prev.depth = depth;
+        weights.push_back(prev);
+    }
     return weights;
 }
 

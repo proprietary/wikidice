@@ -7,7 +7,6 @@
 #include <absl/strings/string_view.h>
 #include <algorithm>
 #include <atomic>
-#include <boost/lockfree/queue.hpp>
 #include <chrono>
 #include <filesystem>
 #include <fmt/core.h>
