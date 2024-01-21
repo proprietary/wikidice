@@ -363,65 +363,23 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
     return 0;
 }
 
-// Run second-pass to build the "weights" column family, which consists of the
-// recursive sum of all the pages under a category.
-void CategoryTreeIndexWriter::build_weights(const uint8_t depth_begin,
-                                            const uint8_t depth_end) {
-    rocksdb::ReadOptions read_options;
-    read_options.adaptive_readahead = true;
-    read_options.total_order_seek = true; // ignore prefix Bloom filter in read
-    std::atomic<uint64_t> total_counter{0};
-    const uint64_t n_rows = count_rows();
-    LOG(INFO) << "Building weights for " << n_rows << " rows in " << n_threads_
-              << " threads...";
-    std::vector<std::thread> threads;
-    for (uint64_t thread_num = 0; thread_num < n_threads_; ++thread_num)
-        threads.emplace_back([this, read_options, &total_counter, thread_num,
-                              n_rows, depth_begin, depth_end]() {
-            // calculate range
-            const uint64_t rows_per_thread = n_rows / n_threads_;
-            const uint64_t rows_per_thread_remainder = n_rows % n_threads_;
-            const uint64_t begin = thread_num * rows_per_thread;
-            const uint64_t end =
-                begin + rows_per_thread +
-                (thread_num == n_threads_ - 1 ? rows_per_thread_remainder : 0);
-            LOG(INFO) << "Launching thread #" << thread_num
-                      << " to build weights for "
-                      << rows_per_thread * (thread_num + 1) +
-                             ((thread_num == n_threads_ - 1)
-                                  ? rows_per_thread_remainder
-                                  : 0)
-                      << " / " << n_rows << " rows";
-            std::unique_ptr<rocksdb::Iterator> it{
-                db_->NewIterator(read_options, categorylinks_cf_)};
-            // advance to start of range
-            it->SeekToFirst();
-            uint64_t internal_count = 0;
-            for (;
-                 it->Valid() && internal_count < (thread_num * rows_per_thread);
-                 ++internal_count)
-                it->Next();
-            for (; it->Valid() && internal_count < end;
-                 it->Next(), ++internal_count) {
-                std::string_view category_name{it->key().data(),
-                                               it->key().size()};
-                for (auto depth = depth_begin; depth <= depth_end; ++depth) {
-                    const std::uint64_t weight =
-                        compute_weight(category_name, depth);
-                    set_weight(category_name,
-                               entities::CategoryWeight{depth, weight});
-                }
-                if (++total_counter % 1'000'000 == 0)
-                    LOG(INFO) << "Built weights for " << total_counter
-                              << " entries so far";
-            }
-            CHECK(it->status().ok())
-                << "Bad database state. Unable to iterate over "
-                   "category links table: "
-                << it->status().ToString();
-        });
-    for (auto &t : threads)
-        t.join();
+auto CategoryTreeIndexWriter::build_weights(
+    std::string_view category_name, const uint8_t depth_begin,
+    const uint8_t depth_end) -> std::vector<entities::CategoryWeight> {
+    std::vector<entities::CategoryWeight> weights;
+    weights.reserve(depth_end - depth_begin + 1);
+    auto depth = depth_begin;
+    for (; depth <= depth_end; ++depth) {
+        entities::CategoryWeight weight;
+        weight.weight = compute_weight(category_name, depth);
+        weight.depth = depth;
+        if (depth > depth_begin && weight.weight == weights.back().weight)
+            break;
+        weights.push_back(weight);
+    }
+    for (; depth <= depth_end && !weights.empty(); ++depth)
+        weights.push_back(weights.back());
+    return weights;
 }
 
 auto CategoryTreeIndex::compute_weight(std::string_view category_name,
@@ -474,16 +432,25 @@ auto CategoryTreeIndexWriter::page_id_to_category_id(entities::PageId page_id)
 }
 
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
-    // perform manual compaction
-    db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
-                      nullptr, nullptr);
     LOG(INFO) << "Pruning the dangling subcategories (subcategories that do "
                  "not have real _article_ (not file) pages underneath them)...";
-    prune_dangling_subcategories();
+    for_each([this](std::string_view category_name,
+                    entities::CategoryLinkRecord &record) {
+        const auto before_len = record.subcategories().size();
+        prune_dangling_subcategories(record);
+        if (record.subcategories().size() != before_len)
+            set(category_name, record);
+    });
     // build the "weights" (the number of leaf nodes (pages) under a category)
     LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
                  "under a category)...";
-    build_weights(DEPTH_BEGIN, DEPTH_END);
+    for_each([this](std::string_view category_name,
+                    entities::CategoryLinkRecord &record) {
+        const auto weights =
+            build_weights(category_name, DEPTH_BEGIN, DEPTH_END);
+        record.weights_mut().assign(weights.begin(), weights.end());
+        set(category_name, record);
+    });
     // flush the write buffer
     LOG(INFO) << "Flushing RocksDB write buffer...";
     rocksdb::FlushOptions flush_options;
@@ -499,7 +466,8 @@ CategoryTreeIndexReader::CategoryTreeIndexReader(
     : CategoryTreeIndex(db_path) {}
 
 auto CategoryTreeIndexReader::search_categories(
-    std::string_view category_name_prefix, size_t requested_count) -> std::vector<std::string> {
+    std::string_view category_name_prefix,
+    size_t requested_count) -> std::vector<std::string> {
     std::vector<std::string> autocompletions{};
     static constexpr size_t MAX_CATEGORY_NAME_PREFIX_LEN = 1'000;
     static constexpr size_t MAX_AUTOCOMPLETIONS = 100;
@@ -630,34 +598,19 @@ auto CategoryTreeIndexWriter::set_weight(std::string_view category_name,
                           }));
 }
 
-auto CategoryTreeIndexWriter::prune_dangling_subcategories() -> void {
+auto CategoryTreeIndexWriter::prune_dangling_subcategories(
+    entities::CategoryLinkRecord &record) -> void {
     // This removes the subcategories that only have "file" pages in them. This
     // is because we don't care about files. No one wants to see a file when
     // they ask for a random article.
-    rocksdb::ReadOptions read_options;
-    read_options.total_order_seek = true;
-    std::unique_ptr<rocksdb::Iterator> it{
-        db_->NewIterator(read_options, categorylinks_cf_)};
-    bool unchanged = true;
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string_view category_name{it->key().data(), it->key().size()};
-        entities::CategoryLinkRecord record;
-        std::span<const uint8_t> value{
-            reinterpret_cast<const uint8_t *>(it->value().data()),
-            it->value().size()};
-        entities::deserialize(record, value);
-        for (auto subcat_it = std::begin(record.subcategories_mut());
-             subcat_it != std::end(record.subcategories_mut());) {
-            const auto subcategory_name = category_name_of(*subcat_it);
-            if (!subcategory_name || !get(*subcategory_name)) {
-                subcat_it = record.subcategories_mut().erase(subcat_it);
-                unchanged = false;
-            } else {
-                subcat_it++;
-            }
+    for (auto subcat_it = std::begin(record.subcategories_mut());
+         subcat_it != std::end(record.subcategories_mut());) {
+        const auto subcategory_name = category_name_of(*subcat_it);
+        if (!subcategory_name || !get(*subcategory_name)) {
+            subcat_it = record.subcategories_mut().erase(subcat_it);
+        } else {
+            subcat_it++;
         }
-        if (!unchanged)
-            set(category_name, record);
     }
 }
 

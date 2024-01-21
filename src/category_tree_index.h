@@ -200,14 +200,32 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
     void add_page(rocksdb::WriteBatch &, const std::string_view category_name,
                   const entities::PageId page_id);
 
-    void build_weights(const uint8_t depth_begin, const uint8_t depth_end);
+    auto build_weights(std::string_view category_name,
+                       const uint8_t depth_begin, const uint8_t depth_end)
+        -> std::vector<entities::CategoryWeight>;
 
     auto page_id_to_category_id(entities::PageId page_id)
         -> std::optional<entities::CategoryId>;
 
-    void prune_dangling_subcategories();
+    void prune_dangling_subcategories(entities::CategoryLinkRecord &);
 
-  private:
+    template <typename Fn> void for_each(Fn &&fn) {
+        rocksdb::ReadOptions read_options;
+        read_options.total_order_seek = true;
+        read_options.adaptive_readahead = true;
+        std::unique_ptr<rocksdb::Iterator> it{
+            db_->NewIterator(read_options, categorylinks_cf_)};
+        for (it->SeekToFirst(); it->Valid(); it->Next()) {
+            std::string_view category_name{it->key().data(), it->key().size()};
+            entities::CategoryLinkRecord record;
+            entities::deserialize(record, std::span<const uint8_t>{
+                                              reinterpret_cast<const uint8_t *>(
+                                                  it->value().data()),
+                                              it->value().size()});
+            fn(category_name, record);
+        }
+    }
+
     std::shared_ptr<CategoryTable> category_table_;
     std::shared_ptr<WikiPageTable> wiki_page_table_;
     uint32_t n_threads_;
@@ -222,8 +240,9 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
     auto pick_at_depth(std::string_view category_name, uint8_t depth,
                        absl::BitGenRef) -> std::optional<entities::PageId>;
 
-    auto search_categories(std::string_view category_name_prefix, size_t requested_count = 10)
-        -> std::vector<std::string>;
+    auto
+    search_categories(std::string_view category_name_prefix,
+                      size_t requested_count = 10) -> std::vector<std::string>;
 
     auto for_each(std::function<bool(std::string_view,
                                      const entities::CategoryLinkRecord &)>)
