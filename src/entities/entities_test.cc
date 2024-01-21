@@ -26,6 +26,22 @@ TEST(EntitiesTest, MsgpackSerialization) {
     ASSERT_GT(buf.str().size(), 0);
 }
 
+TEST(EntitiesTest, MsgpackSerializationWithVector) {
+    CategoryLinkRecord record{};
+    record.pages_mut() = {992ULL, 54ULL};
+    record.subcategories_mut() = {};
+    record.weights_mut() = {{2, 2}, {99, 6}, {100, 1200243}, {101, 11}};
+    std::vector<uint8_t> bytes;
+    serialize(bytes, record);
+    ASSERT_GT(bytes.size(), 0);
+    CategoryLinkRecord deserialized;
+    deserialize(deserialized, bytes);
+    ASSERT_EQ(deserialized, record);
+    ASSERT_EQ(deserialized.pages(), record.pages());
+    ASSERT_EQ(deserialized.subcategories(), record.subcategories());
+    ASSERT_EQ(deserialized.weights(), record.weights());
+}
+
 TEST(EntitiesTest, MsgpackDeserialization) {
     CategoryLinkRecord record{};
     record.pages_mut() = {1ULL, 2ULL, 3ULL};

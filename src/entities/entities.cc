@@ -1,4 +1,5 @@
 #include "common.h"
+#include "entities.h"
 #include "msgpack_serde_logic.h"
 #include <stdexcept>
 #include <string_view>
@@ -7,6 +8,22 @@
 #include <msgpack.hpp>
 
 namespace net_zelcon::wikidice::entities {
+
+namespace {
+class ByteBuffer {
+    std::vector<uint8_t>& data_;
+public:
+    ByteBuffer() = delete;
+    explicit ByteBuffer(std::vector<uint8_t>& data) : data_(data) {}
+    void write(const char* data, std::size_t size) {
+        DCHECK(data != nullptr);
+        this->data_.reserve(this->data_.size() + size);
+        for (std::size_t i = 0; i < size; i++) {
+            this->data_.push_back(data[i]);
+        }
+    }
+};
+} // namespace
 
 /**
  * Merges two vectors of CategoryWeight objects.
@@ -39,14 +56,13 @@ void merge(std::vector<CategoryWeight>& lhs, std::vector<CategoryWeight>& rhs) {
             i++;
         } else if (lhs[i].depth > rhs[j].depth) {
             lhs.insert(lhs.begin() + i, rhs[j]);
-            i += 2;
             j++;
         }
     }
     if (j < rhs.size()) {
         lhs.insert(lhs.end(), rhs.begin() + j, rhs.end());
     }
-    DCHECK(std::is_sorted(lhs.begin(), lhs.end(), comparison));
+    DCHECK(std::is_sorted(lhs.begin(), lhs.end(), comparison)) << "not sorted: " << to_string(lhs.begin(), lhs.end());
     DCHECK_EQ(lhs.size(), static_cast<size_t>(std::ranges::unique(lhs, equality).end() - lhs.begin()));
 }
 
@@ -84,6 +100,11 @@ auto CategoryLinkRecord::operator+=(CategoryLinkRecord &&other) -> void {
 
 auto serialize(std::stringstream& dst, const CategoryLinkRecord& src) -> void {
     msgpack::pack(dst, src);
+}
+
+auto serialize(std::vector<uint8_t>& dst, const CategoryLinkRecord& src) -> void {
+    ByteBuffer b{dst};
+    msgpack::pack(b, src);
 }
 
 auto deserialize(CategoryLinkRecord& dst, const std::span<const uint8_t>& src) -> void {

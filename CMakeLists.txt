@@ -345,6 +345,7 @@ target_link_libraries(
     category_tree_index_test
     PUBLIC
     gtest_main gmock_main gmock wikidice entities category_table
+    absl::log
 )
 
 add_executable(primitive_serializer_test src/primitive_serializer_test.cc)

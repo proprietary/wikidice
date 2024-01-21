@@ -213,9 +213,9 @@ CategoryTreeIndexWriter::CategoryTreeIndexWriter(
 auto CategoryTreeIndexWriter::set(std::string_view category_name,
                                   const entities::CategoryLinkRecord &record) -> void {
     // 1. Serialize
-    std::stringstream buf;
+    std::vector<uint8_t> buf;
     entities::serialize(buf, record);
-    rocksdb::Slice value {std::move(buf).str()};
+    rocksdb::Slice value {reinterpret_cast<const char*>(buf.data()), buf.size()};
     // 2. Add to RocksDB database
     rocksdb::WriteOptions write_options;
     auto status = db_->Put(write_options, categorylinks_cf_, category_name, value);
@@ -284,9 +284,10 @@ void CategoryTreeIndexWriter::add_subcategory(
     const entities::CategoryId subcategory_id) {
     entities::CategoryLinkRecord new_record{};
     new_record.subcategories_mut().push_back(subcategory_id);
-    std::stringstream buf;
+    std::vector<uint8_t> buf;
     entities::serialize(buf, new_record);
-    rocksdb::Slice value{std::move(buf).str()};
+    rocksdb::Slice value{reinterpret_cast<const char *>(buf.data()),
+                         buf.size()};
     auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
@@ -296,9 +297,9 @@ void CategoryTreeIndexWriter::add_page(rocksdb::WriteBatch &batch,
                                        const entities::PageId page_id) {
     entities::CategoryLinkRecord new_record{};
     new_record.pages_mut().push_back(page_id);
-    std::stringstream buf;
+    std::vector<uint8_t> buf;
     entities::serialize(buf, new_record);
-    rocksdb::Slice value{std::move(buf).str()};
+    rocksdb::Slice value{reinterpret_cast<const char*>(buf.data()), buf.size()};
     auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }

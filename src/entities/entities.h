@@ -21,6 +21,8 @@ auto to_string(const CategoryWeight &) -> std::string;
 
 auto serialize(std::stringstream &, const CategoryLinkRecord &src) -> void;
 
+auto serialize(std::vector<uint8_t>& dst, const CategoryLinkRecord& src) -> void;
+
 auto deserialize(CategoryLinkRecord &dst,
                  const std::span<const uint8_t> &src) -> void;
 

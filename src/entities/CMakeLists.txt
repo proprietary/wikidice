@@ -11,6 +11,7 @@ target_sources(
     PRIVATE
     common.h
     msgpack_serde_logic.h
+    entities.h
     entities.cc
 )
 target_compile_features(

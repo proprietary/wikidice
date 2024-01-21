@@ -4,6 +4,7 @@
 #include <sstream>
 #include <utility>
 #include <span>
+#include <absl/log/log.h>
 
 namespace net_zelcon::wikidice::test {
 
@@ -23,13 +24,17 @@ TEST(CategoryLinkRecordMergeOperatorTest, MergeTest) {
     const std::vector<uint64_t> expected_subcategories{94ULL, 95ULL, 96ULL,
                                                        97ULL, 98ULL, 99ULL};
     const std::vector<entities::CategoryWeight> expected_weight = {{1, 5}, {2, 30}, {3, 30}, {4, 40}, {8, 30}, {9, 10001}};
-    std::stringstream existing_buf;
-    entities::serialize(existing_buf, existing);
-    std::stringstream new_record_buf;
-    entities::serialize(new_record_buf, new_record);
+    std::vector<uint8_t> existing_record_bytes;
+    entities::serialize(existing_record_bytes, existing);
+    std::vector<uint8_t> new_record_bytes;
+    entities::serialize(new_record_bytes, new_record);
     std::string output;
-    rocksdb::Slice existing_value(std::move(existing_buf).str());
-    rocksdb::Slice new_record_value(std::move(new_record_buf).str());
+    rocksdb::Slice existing_value{reinterpret_cast<const char *>(
+                                      existing_record_bytes.data()),
+                                  existing_record_bytes.size()};
+    rocksdb::Slice new_record_value{reinterpret_cast<const char *>(
+                                        new_record_bytes.data()),
+                                    new_record_bytes.size()};
 
     bool merge_result = mergeOperator.Merge(category_name, &existing_value,
                                             new_record_value, &output, nullptr);
@@ -37,10 +42,12 @@ TEST(CategoryLinkRecordMergeOperatorTest, MergeTest) {
     ASSERT_TRUE(merge_result);
     ASSERT_GT(output.size(), 0);
     entities::CategoryLinkRecord merged_record{};
+    DLOG(INFO) << "about to deserialize merged record";
     entities::deserialize(merged_record, std::span<const uint8_t>(
                                               reinterpret_cast<const uint8_t *>(
                                                   output.data()),
                                               output.size()));
+    DLOG(INFO) << "deserialized merged record";
     std::sort(merged_record.pages_mut().begin(),
               merged_record.pages_mut().end());
     ASSERT_EQ(expected_pages, merged_record.pages());
