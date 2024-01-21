@@ -303,7 +303,9 @@ target_link_libraries(
     wikidice
     absl::flags absl::flags_parse absl::flags_usage
     absl::log absl::check absl::log_flags 
+    absl::log_initialize
     absl::flat_hash_map
+    fmt::fmt
 )
 
 # Python module

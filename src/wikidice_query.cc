@@ -2,6 +2,7 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <fstream>
+#include <tuple>
 
 namespace net_zelcon::wikidice {
 
@@ -12,6 +13,19 @@ auto Session::pick_random_article(std::string_view category_name,
         return std::make_pair(*article, true);
     } else {
         return std::make_pair(0ULL, false);
+    }
+}
+
+auto Session::pick_random_article_and_show_derivation(
+    std::string_view category_name,
+    uint8_t depth) -> std::tuple<uint64_t, bool, std::vector<std::string>> {
+    const auto result =
+        index_->pick_at_depth_and_show_derivation(category_name, depth, rng_);
+    if (!result) {
+        return std::make_tuple(0ULL, false, std::vector<std::string>{});
+    } else {
+        return std::make_tuple(std::get<0>(*result), true,
+                               std::get<1>(*result));
     }
 }
 

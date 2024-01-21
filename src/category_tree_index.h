@@ -16,6 +16,7 @@
 #include <rocksdb/write_batch.h>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "category_table.h"
@@ -113,6 +114,10 @@ class CategoryTreeIndex {
 
     auto at_index(std::string_view category_name, std::uint64_t index,
                   uint8_t depth) -> std::uint64_t;
+
+    auto resolve_index_with_derivation(std::string_view category_name,
+                                       uint64_t index, uint8_t depth)
+        -> std::tuple<entities::PageId, std::vector<std::string>>;
 
     virtual auto category_name_of(entities::CategoryId category_id)
         -> std::optional<std::string>;
@@ -239,6 +244,11 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
   public:
     auto pick_at_depth(std::string_view category_name, uint8_t depth,
                        absl::BitGenRef) -> std::optional<entities::PageId>;
+
+    auto pick_at_depth_and_show_derivation(std::string_view category_name,
+                                           uint8_t depth, absl::BitGenRef)
+        -> std::optional<
+            std::tuple<entities::PageId, std::vector<std::string>>>;
 
     auto
     search_categories(std::string_view category_name_prefix,

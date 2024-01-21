@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -18,6 +19,9 @@ class Session {
         -> std::vector<std::string>;
     auto pick_random_article(std::string_view category_name,
                              uint8_t depth) -> std::pair<uint64_t, bool>;
+    auto pick_random_article_and_show_derivation(std::string_view category_name,
+                                                 uint8_t depth)
+        -> std::tuple<uint64_t, bool, std::vector<std::string>>;
     auto take(uint64_t n) -> std::vector<std::string>;
     auto get_entry(std::string_view category_name) -> std::string;
 

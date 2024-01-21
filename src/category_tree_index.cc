@@ -15,6 +15,7 @@
 #include <rocksdb/slice_transform.h>
 #include <rocksdb/table.h>
 #include <span>
+#include <stack>
 #include <stdexcept>
 #include <thread>
 #include <unordered_set>
@@ -363,6 +364,48 @@ auto CategoryTreeIndex::at_index(std::string_view category_name,
     return 0;
 }
 
+auto CategoryTreeIndex::resolve_index_with_derivation(
+    std::string_view category_name, std::uint64_t index,
+    uint8_t depth) -> std::tuple<entities::PageId, std::vector<std::string>> {
+    std::vector<std::string> derivation;
+    std::stack<std::string> stack;
+    stack.emplace(category_name);
+    while (!stack.empty()) {
+        auto top = stack.top();
+        stack.pop();
+        auto record = get(top);
+        if (!record) {
+            LOG(WARNING) << "category_name: " << top
+                         << " not found in `categorylinks` column family";
+            continue;
+        }
+        derivation.push_back(top);
+        if (index < record->pages().size()) {
+            return std::make_tuple(record->pages()[index], derivation);
+        }
+        index -= record->pages().size();
+        for (const auto &subcat : map_categories(record->subcategories())) {
+            const auto cat_details = get(subcat);
+            if (!cat_details) {
+                LOG(WARNING) << "category_name: " << subcat
+                             << " not found in `categorylinks` column family";
+                continue;
+            }
+            auto weight_at_depth = cat_details->weight_at_depth(depth);
+            if (weight_at_depth == 0)
+                weight_at_depth = compute_weight(category_name, depth);
+            if (index < weight_at_depth) {
+                stack.emplace(subcat);
+                break;
+            }
+            index -= weight_at_depth;
+        }
+    }
+    LOG(WARNING) << "index: " << index
+                 << " out of range for category_name: " << category_name;
+    return std::make_tuple(0, derivation);
+}
+
 auto CategoryTreeIndexWriter::build_weights(
     std::string_view category_name, const uint8_t depth_begin,
     const uint8_t depth_end) -> std::vector<entities::CategoryWeight> {
@@ -579,9 +622,23 @@ auto CategoryTreeIndexWriter::count_rows() -> uint64_t {
 auto CategoryTreeIndexReader::pick_at_depth(std::string_view category_name,
                                             uint8_t depth, absl::BitGenRef gen)
     -> std::optional<entities::PageId> {
-    const auto weight = compute_weight(category_name, depth);
-    auto picked = absl::Uniform<std::uint64_t>(gen, 0UL, weight);
+    const auto record = get(category_name);
+    if (!record)
+        return std::nullopt;
+    const auto picked =
+        absl::Uniform<std::uint64_t>(gen, 0UL, record->weight_at_depth(depth));
     return at_index(category_name, picked, depth);
+}
+
+auto CategoryTreeIndexReader::pick_at_depth_and_show_derivation(
+    std::string_view category_name, uint8_t depth, absl::BitGenRef gen)
+    -> std::optional<std::tuple<entities::PageId, std::vector<std::string>>> {
+    const auto record = get(category_name);
+    if (!record)
+        return std::nullopt;
+    const auto picked =
+        absl::Uniform<std::uint64_t>(gen, 0UL, record->weight_at_depth(depth));
+    return resolve_index_with_derivation(category_name, picked, depth);
 }
 
 auto CategoryTreeIndexWriter::set_weight(std::string_view category_name,
