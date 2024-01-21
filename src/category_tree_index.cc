@@ -499,10 +499,11 @@ CategoryTreeIndexReader::CategoryTreeIndexReader(
     : CategoryTreeIndex(db_path) {}
 
 auto CategoryTreeIndexReader::search_categories(
-    std::string_view category_name_prefix) -> std::vector<std::string> {
+    std::string_view category_name_prefix, size_t requested_count) -> std::vector<std::string> {
     std::vector<std::string> autocompletions{};
     static constexpr size_t MAX_CATEGORY_NAME_PREFIX_LEN = 1'000;
     static constexpr size_t MAX_AUTOCOMPLETIONS = 100;
+    requested_count = std::min(requested_count, MAX_AUTOCOMPLETIONS);
     if (category_name_prefix.length() > MAX_CATEGORY_NAME_PREFIX_LEN)
         return autocompletions;
     rocksdb::ReadOptions read_options;
@@ -511,7 +512,7 @@ auto CategoryTreeIndexReader::search_categories(
         db_->NewIterator(read_options, categorylinks_cf_)};
     for (it->Seek(category_name_prefix);
          it->Valid() && it->key().starts_with(category_name_prefix) &&
-         autocompletions.size() < MAX_AUTOCOMPLETIONS;
+         autocompletions.size() < requested_count;
          it->Next()) {
         autocompletions.emplace_back(it->key().data(), it->key().size());
     }

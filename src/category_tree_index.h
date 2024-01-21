@@ -222,7 +222,7 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
     auto pick_at_depth(std::string_view category_name, uint8_t depth,
                        absl::BitGenRef) -> std::optional<entities::PageId>;
 
-    auto search_categories(std::string_view category_name_prefix)
+    auto search_categories(std::string_view category_name_prefix, size_t requested_count = 10)
         -> std::vector<std::string>;
 
     auto for_each(std::function<bool(std::string_view,
