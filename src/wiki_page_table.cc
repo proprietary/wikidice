@@ -41,7 +41,8 @@ auto WikiPageTable::add_page(const entities::PageTableRow &page_row) -> void {
     CHECK(status.ok()) << status.ToString();
 }
 
-auto WikiPageTable::find(const entities::PageId page_id) -> std::optional<entities::PageTableRow> {
+auto WikiPageTable::find(const entities::PageId page_id)
+    -> std::optional<entities::PageTableRow> {
     auto page_id_serialized = primitive_serializer::serialize_u64(page_id);
     rocksdb::Slice key(
         reinterpret_cast<const char *>(page_id_serialized.data()),

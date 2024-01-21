@@ -18,8 +18,8 @@
 #include <string_view>
 #include <vector>
 
-#include "entities/entities.h"
 #include "category_table.h"
+#include "entities/entities.h"
 #include "wiki_page_table.h"
 
 namespace net_zelcon::wikidice {
@@ -81,8 +81,8 @@ class CategoryTreeIndex {
 
     auto db() const noexcept -> rocksdb::DB * { return db_; }
 
-    auto
-    get(std::string_view category_name) -> std::optional<entities::CategoryLinkRecord>;
+    auto get(std::string_view category_name)
+        -> std::optional<entities::CategoryLinkRecord>;
 
     auto to_string(const entities::CategoryLinkRecord &) -> std::string;
 
@@ -101,9 +101,8 @@ class CategoryTreeIndex {
      * category, plus the number of pages in all subcategories, plus the number
      * of pages in all sub-subcategories, etc. up to the specified depth.
      */
-    auto
-    compute_weight(std::string_view category_name,
-                   uint8_t max_depth) -> std::uint64_t;
+    auto compute_weight(std::string_view category_name,
+                        uint8_t max_depth) -> std::uint64_t;
 
   protected:
     auto
@@ -112,11 +111,11 @@ class CategoryTreeIndex {
     auto
     lookup_subcats(std::string_view category_name) -> std::vector<std::string>;
 
-    auto at_index(std::string_view category_name,
-                  std::uint64_t index, uint8_t depth) -> std::uint64_t;
+    auto at_index(std::string_view category_name, std::uint64_t index,
+                  uint8_t depth) -> std::uint64_t;
 
-    virtual auto
-    category_name_of(entities::CategoryId category_id) -> std::optional<std::string>;
+    virtual auto category_name_of(entities::CategoryId category_id)
+        -> std::optional<std::string>;
 
     virtual auto
     categorylinks_cf_options() const -> rocksdb::ColumnFamilyOptions;
@@ -139,10 +138,11 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
   public:
     void import_categorylinks_row(const entities::CategoryLinksRow &);
 
-    void import_categorylinks_rows(const std::vector<entities::CategoryLinksRow> &);
-
     void
-    import_categorylinks_rows(const std::vector<const entities::CategoryLinksRow *> &);
+    import_categorylinks_rows(const std::vector<entities::CategoryLinksRow> &);
+
+    void import_categorylinks_rows(
+        const std::vector<const entities::CategoryLinksRow *> &);
 
     void import_category_row(const entities::CategoryRow &);
 
@@ -187,9 +187,11 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
         -> std::optional<std::string> final;
 
   private:
-    void set(std::string_view category_name, const entities::CategoryLinkRecord &);
+    void set(std::string_view category_name,
+             const entities::CategoryLinkRecord &);
 
-    void set_weight(std::string_view category_name, const entities::CategoryWeight &);
+    void set_weight(std::string_view category_name,
+                    const entities::CategoryWeight &);
 
     void add_subcategory(rocksdb::WriteBatch &,
                          const std::string_view category_name,
@@ -200,7 +202,8 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     void build_weights(const uint8_t depth_begin, const uint8_t depth_end);
 
-    auto page_id_to_category_id(entities::PageId page_id) -> std::optional<entities::CategoryId>;
+    auto page_id_to_category_id(entities::PageId page_id)
+        -> std::optional<entities::CategoryId>;
 
     void prune_dangling_subcategories();
 
@@ -216,17 +219,17 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
 class CategoryTreeIndexReader : public CategoryTreeIndex {
   public:
-    auto pick_at_depth(std::string_view category_name, uint8_t depth, absl::BitGenRef) -> std::optional<entities::PageId>;
+    auto pick_at_depth(std::string_view category_name, uint8_t depth,
+                       absl::BitGenRef) -> std::optional<entities::PageId>;
 
     auto search_categories(std::string_view category_name_prefix)
         -> std::vector<std::string>;
 
-    auto for_each(
-        std::function<bool(std::string_view, const entities::CategoryLinkRecord &)>)
+    auto for_each(std::function<bool(std::string_view,
+                                     const entities::CategoryLinkRecord &)>)
         -> void;
 
     explicit CategoryTreeIndexReader(const std::filesystem::path db_path);
 };
 
 } // namespace net_zelcon::wikidice
-

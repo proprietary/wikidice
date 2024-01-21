@@ -81,8 +81,8 @@ class CategoryLinksRowDecompositionStrategy {
     using column_type = entities::CategoryLinksRow;
     static constexpr std::string_view table_name = "categorylinks"sv;
 
-    static auto
-    decompose(const std::vector<std::string> &row) -> entities::CategoryLinksRow;
+    static auto decompose(const std::vector<std::string> &row)
+        -> entities::CategoryLinksRow;
 };
 
 class CategoryTableRowDecompositionStrategy {
@@ -90,7 +90,8 @@ class CategoryTableRowDecompositionStrategy {
     using column_type = entities::CategoryRow;
     static constexpr std::string_view table_name = "category"sv;
 
-    static auto decompose(const std::vector<std::string> &row) -> entities::CategoryRow;
+    static auto
+    decompose(const std::vector<std::string> &row) -> entities::CategoryRow;
 };
 
 class PageRowDecompositionStrategy {
@@ -98,7 +99,8 @@ class PageRowDecompositionStrategy {
     using column_type = entities::PageTableRow;
     static constexpr std::string_view table_name = "page"sv;
 
-    static auto decompose(const std::vector<std::string> &row) -> entities::PageTableRow;
+    static auto
+    decompose(const std::vector<std::string> &row) -> entities::PageTableRow;
 };
 
 class CategoryLinksParser

@@ -21,9 +21,9 @@
 #include <vector>
 
 #include "build_category_tree.h"
+#include "category_table.h"
 #include "category_tree_index.h"
 #include "entities/entities.h"
-#include "category_table.h"
 #include "sql_parser.h"
 #include "wiki_page_table.h"
 
