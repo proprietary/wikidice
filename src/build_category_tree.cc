@@ -37,7 +37,7 @@ ABSL_FLAG(std::string, page_dump, "",
 ABSL_FLAG(std::string, db_path, "", "Path to the database directory");
 ABSL_FLAG(std::string, wikipedia_language_code, "en",
           "Wikipedia language code (e.g., \"en\", \"de\")");
-ABSL_FLAG(uint32_t, threads, 8, "Number of threads to use");
+ABSL_FLAG(uint32_t, threads, std::thread::hardware_concurrency(), "Number of threads to use");
 ABSL_FLAG(bool, skip_import, false, "Skip import and only run the second pass");
 
 namespace {
