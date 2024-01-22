@@ -412,7 +412,7 @@ auto CategoryTreeIndexWriter::build_weights(
     std::vector<entities::CategoryWeight> weights;
     weights.reserve(depth_end - depth_begin + 1);
     auto depth = depth_begin;
-    static constexpr size_t kStopIfRepeatedNTimes = 1;
+    static constexpr size_t kStopIfRepeatedNTimes = 5;
     for (; depth <= depth_end; ++depth) {
         entities::CategoryWeight weight;
         weight.weight = compute_weight(category_name, depth);
