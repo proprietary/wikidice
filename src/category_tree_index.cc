@@ -480,41 +480,68 @@ auto CategoryTreeIndexWriter::page_id_to_category_id(entities::PageId page_id)
 }
 
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
-
-    LOG(INFO) << "Pruning the dangling subcategories (subcategories that do "
-                 "not have real _article_ (not file) pages underneath them)...";
-    for_each([this](std::string_view category_name,
-                    entities::CategoryLinkRecord &record) {
-        uint64_t counter = 0;
-        const auto before_len = record.subcategories().size();
-        prune_dangling_subcategories(record);
-        if (record.subcategories().size() != before_len) {
-            set(category_name, record);
-        }
-        counter++;
-        LOG_IF(INFO, counter % 100'000 == 0)
-            << "Pruned dangling subcategories for " << counter
-            << " categories so far";
-    });
-    std::atomic<uint64_t> counter{0};
-    // build the "weights" (the number of leaf nodes (pages) under a category)
-    LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
-                 "under a category)...";
+    static constexpr size_t kWriteBatchSize = 10'000;
+    static constexpr size_t kQueueCapacity = (1 << 16) - 2;
     // set up RocksDB writer thread
     std::atomic<bool> done{false};
     boost::lockfree::queue<
         std::pair<std::string, entities::CategoryLinkRecord> *,
-        boost::lockfree::capacity<10'000>>
+        boost::lockfree::capacity<kQueueCapacity>>
         queue{};
     std::thread writer_thread{[this, &queue, &done]() {
+        std::vector<std::pair<std::string, entities::CategoryLinkRecord> *>
+            entries_batch;
         std::pair<std::string, entities::CategoryLinkRecord> *entry;
+        rocksdb::WriteBatch wb;
         while (!done) {
             while (queue.pop(entry)) {
-                set(entry->first, entry->second);
-                delete entry;
+                entries_batch.push_back(entry);
+                if (entries_batch.size() >= kWriteBatchSize) {
+                    for (const auto &entry : entries_batch) {
+                        std::vector<uint8_t> buf;
+                        entities::serialize(buf, entry->second);
+                        rocksdb::Slice value{
+                            reinterpret_cast<const char *>(buf.data()),
+                            buf.size()};
+                        wb.Put(categorylinks_cf_, entry->first, value);
+                    }
+                    rocksdb::WriteOptions write_options;
+                    const auto status = db_->Write(write_options, &wb);
+                    CHECK(status.ok())
+                        << "Failed to write batch: " << status.ToString();
+                    for (size_t i = 0; i < entries_batch.size(); ++i) {
+                        delete entries_batch[i];
+                    }
+                    entries_batch.clear();
+                }
             }
         }
     }};
+    std::atomic<uint64_t> counter{0};
+    LOG(INFO) << "Pruning the dangling subcategories (subcategories that do "
+                 "not have real _article_ (not file) pages underneath them)...";
+    parallel_for_each(
+        [this, &queue, &counter](std::string_view category_name,
+                                 entities::CategoryLinkRecord &record) {
+            const auto before_len = record.subcategories().size();
+            prune_dangling_subcategories(record);
+            if (record.subcategories().size() != before_len) {
+                std::pair<std::string, entities::CategoryLinkRecord> *entry =
+                    new std::pair<std::string, entities::CategoryLinkRecord>{
+                        std::string{category_name}, std::move(record)};
+                while (!queue.push(entry)) {
+                    std::this_thread::yield();
+                }
+            }
+            const auto counter_val = counter.fetch_add(1);
+            LOG_IF(INFO, counter_val % 100'000 == 0)
+                << "Pruned dangling subcategories for " << counter
+                << " categories so far";
+        });
+    counter = 0;
+    // build the "weights" (the number of leaf nodes (pages) under a category)
+    LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
+                 "under a category)...";
     parallel_for_each(
         [this, &counter, &queue](std::string_view category_name,
                                  entities::CategoryLinkRecord &record) {

@@ -37,8 +37,7 @@ ABSL_FLAG(std::string, page_dump, "",
 ABSL_FLAG(std::string, db_path, "", "Path to the database directory");
 ABSL_FLAG(std::string, wikipedia_language_code, "en",
           "Wikipedia language code (e.g., \"en\", \"de\")");
-ABSL_FLAG(uint32_t, threads, std::thread::hardware_concurrency(),
-          "Number of threads to use");
+ABSL_FLAG(uint32_t, threads, 0, "Number of threads to use");
 ABSL_FLAG(bool, skip_import, false, "Skip import and only run the second pass");
 
 namespace {
@@ -158,6 +157,9 @@ int main(int argc, char *argv[]) {
     CHECK(is_valid_language(absl::GetFlag(FLAGS_wikipedia_language_code)))
         << "Invalid Wikipedia language code (should be something like \"en\" "
            "or \"de\")";
+    // set default number of threads to the number of cores
+    if (absl::GetFlag(FLAGS_threads) == 0)
+        absl::SetFlag(&FLAGS_threads, std::thread::hardware_concurrency());
 
     // Import category table
     LOG(INFO) << "Reading category table from "
