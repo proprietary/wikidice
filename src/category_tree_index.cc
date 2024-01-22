@@ -486,22 +486,31 @@ auto CategoryTreeIndexWriter::page_id_to_category_id(entities::PageId page_id)
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
     LOG(INFO) << "Pruning the dangling subcategories (subcategories that do "
                  "not have real _article_ (not file) pages underneath them)...";
-    for_each([this](std::string_view category_name,
-                    entities::CategoryLinkRecord &record) {
+    std::atomic<uint64_t> counter{0};
+    parallel_for_each([this, &counter](std::string_view category_name,
+                                       entities::CategoryLinkRecord &record) {
         const auto before_len = record.subcategories().size();
         prune_dangling_subcategories(record);
         if (record.subcategories().size() != before_len)
             set(category_name, record);
+        const auto counter_result = counter.fetch_add(1);
+        LOG_IF(INFO, counter_result % 100'000 == 0)
+            << "Pruned dangling subcategories for " << counter_result
+            << " categories so far";
     });
+    counter.store(0);
     // build the "weights" (the number of leaf nodes (pages) under a category)
     LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
                  "under a category)...";
-    for_each([this](std::string_view category_name,
-                    entities::CategoryLinkRecord &record) {
+    parallel_for_each([this, &counter](std::string_view category_name,
+                                       entities::CategoryLinkRecord &record) {
         const auto weights =
             build_weights(category_name, DEPTH_BEGIN, DEPTH_END);
         record.weights_mut().assign(weights.begin(), weights.end());
         set(category_name, record);
+        const auto counter_result = counter.fetch_add(1);
+        LOG_IF(INFO, counter_result % 100'000 == 0)
+            << "Built weights for " << counter_result << " categories so far";
     });
     // flush the write buffer
     LOG(INFO) << "Flushing RocksDB write buffer...";

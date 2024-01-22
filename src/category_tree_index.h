@@ -16,6 +16,7 @@
 #include <rocksdb/write_batch.h>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -137,6 +138,23 @@ class CategoryTreeIndex {
         -> std::vector<std::string>;
 
     auto category_id_to_name_cf_options() const -> rocksdb::ColumnFamilyOptions;
+
+    template <typename Fn> void for_each(Fn &&fn) {
+        rocksdb::ReadOptions read_options;
+        read_options.total_order_seek = true;
+        read_options.adaptive_readahead = true;
+        std::unique_ptr<rocksdb::Iterator> it{
+            db_->NewIterator(read_options, categorylinks_cf_)};
+        for (it->SeekToFirst(); it->Valid(); it->Next()) {
+            std::string_view category_name{it->key().data(), it->key().size()};
+            entities::CategoryLinkRecord record;
+            entities::deserialize(record, std::span<const uint8_t>{
+                                              reinterpret_cast<const uint8_t *>(
+                                                  it->value().data()),
+                                              it->value().size()});
+            fn(category_name, record);
+        }
+    }
 };
 
 class CategoryTreeIndexWriter : public CategoryTreeIndex {
@@ -214,22 +232,7 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     void prune_dangling_subcategories(entities::CategoryLinkRecord &);
 
-    template <typename Fn> void for_each(Fn &&fn) {
-        rocksdb::ReadOptions read_options;
-        read_options.total_order_seek = true;
-        read_options.adaptive_readahead = true;
-        std::unique_ptr<rocksdb::Iterator> it{
-            db_->NewIterator(read_options, categorylinks_cf_)};
-        for (it->SeekToFirst(); it->Valid(); it->Next()) {
-            std::string_view category_name{it->key().data(), it->key().size()};
-            entities::CategoryLinkRecord record;
-            entities::deserialize(record, std::span<const uint8_t>{
-                                              reinterpret_cast<const uint8_t *>(
-                                                  it->value().data()),
-                                              it->value().size()});
-            fn(category_name, record);
-        }
-    }
+    template <typename Fn> void parallel_for_each(Fn &&fn);
 
     std::shared_ptr<CategoryTable> category_table_;
     std::shared_ptr<WikiPageTable> wiki_page_table_;
@@ -260,5 +263,47 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
 
     explicit CategoryTreeIndexReader(const std::filesystem::path db_path);
 };
+
+template <typename Fn>
+void CategoryTreeIndexWriter::parallel_for_each(Fn &&fn) {
+    const auto n_rows = count_rows();
+    const auto rows_per_thread = n_rows / n_threads_;
+    const auto rows_per_thread_remainder = n_rows % n_threads_;
+    std::vector<std::thread> threads;
+    for (uint32_t i = 0; i < n_threads_; ++i) {
+        threads.emplace_back([this, i, rows_per_thread,
+                              rows_per_thread_remainder, &fn]() {
+            const auto begin = i * rows_per_thread;
+            const auto end =
+                (i + 1) * rows_per_thread +
+                (i == n_threads_ - 1 ? rows_per_thread_remainder : 0);
+            rocksdb::ReadOptions read_options;
+            read_options.total_order_seek = true;
+            read_options.adaptive_readahead = true;
+            std::unique_ptr<rocksdb::Iterator> it{
+                db_->NewIterator(read_options, categorylinks_cf_)};
+            it->SeekToFirst();
+            for (uint64_t j = 0; j < begin; ++j)
+                it->Next();
+            for (uint64_t j = begin; j < end; ++j) {
+                if (!it->Valid())
+                    break;
+                std::string_view category_name{it->key().data(),
+                                               it->key().size()};
+                entities::CategoryLinkRecord record;
+                entities::deserialize(
+                    record,
+                    std::span<const uint8_t>{
+                        reinterpret_cast<const uint8_t *>(it->value().data()),
+                        it->value().size()});
+                fn(category_name, record);
+                it->Next();
+            }
+        });
+    }
+
+    for (auto &t : threads)
+        t.join();
+}
 
 } // namespace net_zelcon::wikidice
