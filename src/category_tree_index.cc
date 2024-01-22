@@ -426,11 +426,6 @@ auto CategoryTreeIndexWriter::build_weights(
             break;
         weights.push_back(weight);
     }
-    for (; depth <= depth_end && !weights.empty(); ++depth) {
-        auto prev = weights.back();
-        prev.depth = depth;
-        weights.push_back(prev);
-    }
     return weights;
 }
 
