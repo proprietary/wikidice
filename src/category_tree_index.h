@@ -232,7 +232,8 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
 
     void prune_dangling_subcategories(entities::CategoryLinkRecord &);
 
-    template <typename Fn> void parallel_for_each(Fn &&fn);
+    template <typename Fn>
+    void parallel_for_each(Fn &&fn, uint32_t n_threads = 0);
 
     std::shared_ptr<CategoryTable> category_table_;
     std::shared_ptr<WikiPageTable> wiki_page_table_;
@@ -265,18 +266,20 @@ class CategoryTreeIndexReader : public CategoryTreeIndex {
 };
 
 template <typename Fn>
-void CategoryTreeIndexWriter::parallel_for_each(Fn &&fn) {
+void CategoryTreeIndexWriter::parallel_for_each(Fn &&fn, uint32_t n_threads) {
+    if (n_threads == 0)
+        n_threads = n_threads_;
     const auto n_rows = count_rows();
-    const auto rows_per_thread = n_rows / n_threads_;
-    const auto rows_per_thread_remainder = n_rows % n_threads_;
+    const auto rows_per_thread = n_rows / n_threads;
+    const auto rows_per_thread_remainder = n_rows % n_threads;
     std::vector<std::thread> threads;
-    for (uint32_t i = 0; i < n_threads_; ++i) {
+    for (uint32_t i = 0; i < n_threads; ++i) {
         threads.emplace_back([this, i, rows_per_thread,
-                              rows_per_thread_remainder, &fn]() {
+                              rows_per_thread_remainder, &fn, n_threads]() {
             const auto begin = i * rows_per_thread;
             const auto end =
                 (i + 1) * rows_per_thread +
-                (i == n_threads_ - 1 ? rows_per_thread_remainder : 0);
+                (i == n_threads - 1 ? rows_per_thread_remainder : 0);
             rocksdb::ReadOptions read_options;
             read_options.total_order_seek = true;
             read_options.adaptive_readahead = true;

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <boost/lockfree/queue.hpp>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <iterator>
@@ -479,34 +480,66 @@ auto CategoryTreeIndexWriter::page_id_to_category_id(entities::PageId page_id)
 }
 
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
+    // set up RocksDB writer thread
+    std::atomic<bool> done{false};
+    boost::lockfree::queue<
+        std::pair<std::string, entities::CategoryLinkRecord> *,
+        boost::lockfree::capacity<10'000>>
+        queue{};
+    std::thread writer_thread{[this, &queue, &done]() {
+        std::pair<std::string, entities::CategoryLinkRecord> *entry;
+        while (!done) {
+            while (queue.pop(entry)) {
+                set(entry->first, entry->second);
+                delete entry;
+            }
+        }
+    }};
     LOG(INFO) << "Pruning the dangling subcategories (subcategories that do "
                  "not have real _article_ (not file) pages underneath them)...";
     std::atomic<uint64_t> counter{0};
-    parallel_for_each([this, &counter](std::string_view category_name,
-                                       entities::CategoryLinkRecord &record) {
-        const auto before_len = record.subcategories().size();
-        prune_dangling_subcategories(record);
-        if (record.subcategories().size() != before_len)
-            set(category_name, record);
-        const auto counter_result = counter.fetch_add(1);
-        LOG_IF(INFO, counter_result % 100'000 == 0)
-            << "Pruned dangling subcategories for " << counter_result
-            << " categories so far";
-    });
-    counter.store(0);
+    parallel_for_each(
+        [this, &counter, &queue](std::string_view category_name,
+                                 entities::CategoryLinkRecord &record) {
+            const auto before_len = record.subcategories().size();
+            prune_dangling_subcategories(record);
+            if (record.subcategories().size() != before_len) {
+                std::pair<std::string, entities::CategoryLinkRecord> *entry =
+                    new std::pair<std::string, entities::CategoryLinkRecord>{
+                        std::string{category_name}, std::move(record)};
+                while (!queue.push(entry)) {
+                    std::this_thread::yield();
+                }
+            }
+            const auto counter_result = counter.fetch_add(1);
+            LOG_IF(INFO, counter_result % 100'000 == 0)
+                << "Pruned dangling subcategories for " << counter_result
+                << " categories so far";
+        },
+        n_threads_ - 1);
+    counter = 0;
     // build the "weights" (the number of leaf nodes (pages) under a category)
     LOG(INFO) << "Building the weights (aka the number of leaf nodes (pages) "
                  "under a category)...";
-    parallel_for_each([this, &counter](std::string_view category_name,
-                                       entities::CategoryLinkRecord &record) {
-        const auto weights =
-            build_weights(category_name, DEPTH_BEGIN, DEPTH_END);
-        record.weights_mut().assign(weights.begin(), weights.end());
-        set(category_name, record);
-        const auto counter_result = counter.fetch_add(1);
-        LOG_IF(INFO, counter_result % 100'000 == 0)
-            << "Built weights for " << counter_result << " categories so far";
-    });
+    parallel_for_each(
+        [this, &counter, &queue](std::string_view category_name,
+                                 entities::CategoryLinkRecord &record) {
+            const auto weights =
+                build_weights(category_name, DEPTH_BEGIN, DEPTH_END);
+            record.weights_mut().assign(weights.begin(), weights.end());
+            std::pair<std::string, entities::CategoryLinkRecord> *entry =
+                new std::pair<std::string, entities::CategoryLinkRecord>{
+                    std::string{category_name}, std::move(record)};
+            while (!queue.push(entry)) {
+                std::this_thread::yield();
+            }
+            const auto counter_result = counter.fetch_add(1);
+            LOG_IF(INFO, counter_result % 100'000 == 0)
+                << "Built weights for " << counter_result
+                << " categories so far";
+        },
+        n_threads_ - 1);
+    done = true;
     // flush the write buffer
     LOG(INFO) << "Flushing RocksDB write buffer...";
     rocksdb::FlushOptions flush_options;

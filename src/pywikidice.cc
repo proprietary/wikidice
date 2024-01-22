@@ -10,6 +10,9 @@ PYBIND11_MODULE(pywikidice, m) {
         .def(pybind11::init<std::string_view>())
         .def("pick_random_article",
              &net_zelcon::wikidice::Session::pick_random_article)
+        .def("pick_random_article_and_show_derivation",
+             &net_zelcon::wikidice::Session::
+                 pick_random_article_and_show_derivation)
         .def("autocomplete_category_name",
              &net_zelcon::wikidice::Session::autocomplete_category_name)
         .def("take", &net_zelcon::wikidice::Session::take)
