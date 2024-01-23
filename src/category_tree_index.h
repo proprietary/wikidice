@@ -88,7 +88,7 @@ class CategoryTreeIndex {
 
     auto to_string(const entities::CategoryLinkRecord &) -> std::string;
 
-    virtual auto count_rows() -> uint64_t;
+    auto count_rows() -> uint64_t;
 
     void run_compaction();
 
@@ -185,20 +185,12 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
         category_id_to_name_cf_ = other.category_id_to_name_cf_;
         other.category_id_to_name_cf_ = nullptr;
         category_table_ = std::move(other.category_table_);
-        // categorylinks_count_ is atomic, so no need to copy it.
-        categorylinks_count_.store(other.categorylinks_count_.load());
-        other.categorylinks_count_.store(0);
     }
     CategoryTreeIndexWriter &operator=(CategoryTreeIndexWriter &&other) {
         category_table_ = std::move(other.category_table_);
         n_threads_ = other.n_threads_;
-        // categorylinks_count_ is atomic, so no need to copy it.
-        categorylinks_count_.store(other.categorylinks_count_.load());
-        other.categorylinks_count_.store(0);
         return *this;
     }
-
-    auto count_rows() -> uint64_t override;
 
   protected:
     auto
@@ -238,7 +230,6 @@ class CategoryTreeIndexWriter : public CategoryTreeIndex {
     std::shared_ptr<CategoryTable> category_table_;
     std::shared_ptr<WikiPageTable> wiki_page_table_;
     uint32_t n_threads_;
-    std::atomic<uint64_t> categorylinks_count_;
 
     static constexpr uint8_t DEPTH_BEGIN = 0;
     static constexpr uint8_t DEPTH_END = 100;

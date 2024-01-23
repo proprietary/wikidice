@@ -272,7 +272,6 @@ void CategoryTreeIndexWriter::import_categorylinks_rows(
     auto status = db_->Write(write_options, &batch);
     CHECK(status.ok()) << "Batch write of category link rows failed: "
                        << status.ToString();
-    categorylinks_count_ += rows.size();
 }
 
 void CategoryTreeIndexWriter::import_categorylinks_rows(
@@ -674,13 +673,6 @@ auto CategoryTreeIndex::count_rows() -> uint64_t {
             LOG(INFO) << "Checked " << counter << " category link rows so far";
     }
     return counter;
-}
-
-auto CategoryTreeIndexWriter::count_rows() -> uint64_t {
-    if (categorylinks_count_.load() > 0) {
-        return categorylinks_count_.load();
-    }
-    return CategoryTreeIndex::count_rows();
 }
 
 auto CategoryTreeIndexReader::pick_at_depth(std::string_view category_name,
