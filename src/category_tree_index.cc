@@ -491,6 +491,8 @@ auto CategoryTreeIndexWriter::page_id_to_category_id(entities::PageId page_id)
 auto CategoryTreeIndexWriter::run_second_pass() -> void {
     static constexpr size_t kWriteBatchSize = 10'000;
     static constexpr size_t kQueueCapacity = (1 << 16) - 2;
+    // run compaction manually
+    run_compaction();
     // set up RocksDB writer thread
     std::atomic<bool> done{false};
     boost::lockfree::queue<
@@ -582,8 +584,7 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
     flush_options.wait = true;
     db_->Flush(flush_options);
     // perform manual compaction
-    db_->CompactRange(rocksdb::CompactRangeOptions{}, categorylinks_cf_,
-                      nullptr, nullptr);
+    run_compaction();
 }
 
 CategoryTreeIndexReader::CategoryTreeIndexReader(
