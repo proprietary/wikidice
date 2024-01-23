@@ -299,7 +299,7 @@ void CategoryTreeIndexWriter::parallel_for_each(Fn &&fn, uint32_t n_threads) {
                     std::span<const uint8_t>{
                         reinterpret_cast<const uint8_t *>(it->value().data()),
                         it->value().size()});
-                fn(category_name, record);
+                fn(category_name, std::move(record));
                 it->Next();
             }
         });

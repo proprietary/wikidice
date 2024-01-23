@@ -23,6 +23,21 @@
 
 namespace net_zelcon::wikidice {
 
+namespace {
+
+template <typename T> auto to_slice(const T &src) -> rocksdb::Slice {
+    return rocksdb::Slice{reinterpret_cast<const char *>(src.data()),
+                          src.size()};
+}
+
+template <typename T>
+auto to_byte_span(const T &src) -> std::span<const uint8_t> {
+    return std::span<const uint8_t>{
+        reinterpret_cast<const uint8_t *>(src.data()), src.size()};
+}
+
+} // namespace
+
 auto CategoryTreeIndexWriter::categorylinks_cf_options() const
     -> rocksdb::ColumnFamilyOptions {
     rocksdb::ColumnFamilyOptions cf_options;
@@ -131,7 +146,7 @@ void CategoryTreeIndex::run_compaction() {
 auto CategoryTreeIndex::category_name_of(entities::CategoryId category_id)
     -> std::optional<std::string> {
     auto ser = primitive_serializer::serialize_u64(category_id);
-    rocksdb::Slice key{reinterpret_cast<const char *>(ser.data()), ser.size()};
+    rocksdb::Slice key = to_slice(ser);
     rocksdb::PinnableSlice value;
     rocksdb::ReadOptions read_options;
     const auto status =
@@ -195,8 +210,7 @@ auto CategoryTreeIndex::get(std::string_view category_name)
         << "Failed to get category_name: " << category_name
         << " status: " << status.ToString();
     // 2. Deserialize
-    std::span<const uint8_t> data{
-        reinterpret_cast<const uint8_t *>(value.data()), value.size()};
+    std::span<const uint8_t> data = to_byte_span(value);
     entities::CategoryLinkRecord output;
     entities::deserialize(output, data);
     return output;
@@ -220,8 +234,7 @@ auto CategoryTreeIndexWriter::set(std::string_view category_name,
     // 1. Serialize
     std::vector<uint8_t> buf;
     entities::serialize(buf, record);
-    rocksdb::Slice value{reinterpret_cast<const char *>(buf.data()),
-                         buf.size()};
+    rocksdb::Slice value = to_slice(buf);
     // 2. Add to RocksDB database
     rocksdb::WriteOptions write_options;
     auto status =
@@ -278,8 +291,7 @@ void CategoryTreeIndexWriter::import_category_row(
     // 1. Serialize
     const auto category_id =
         primitive_serializer::serialize_u64(row.category_id);
-    rocksdb::Slice key{reinterpret_cast<const char *>(category_id.data()),
-                       category_id.size()};
+    rocksdb::Slice key = to_slice(category_id);
     rocksdb::Slice value{row.category_name};
     // 2. Add to RocksDB database
     rocksdb::WriteOptions write_options;
@@ -294,8 +306,7 @@ void CategoryTreeIndexWriter::add_subcategory(
     new_record.subcategories_mut().push_back(subcategory_id);
     std::vector<uint8_t> buf;
     entities::serialize(buf, new_record);
-    rocksdb::Slice value{reinterpret_cast<const char *>(buf.data()),
-                         buf.size()};
+    rocksdb::Slice value = to_slice(buf);
     auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
@@ -307,8 +318,7 @@ void CategoryTreeIndexWriter::add_page(rocksdb::WriteBatch &batch,
     new_record.pages_mut().push_back(page_id);
     std::vector<uint8_t> buf;
     entities::serialize(buf, new_record);
-    rocksdb::Slice value{reinterpret_cast<const char *>(buf.data()),
-                         buf.size()};
+    rocksdb::Slice value = to_slice(buf);
     auto status = batch.Merge(categorylinks_cf_, category_name, value);
     CHECK(status.ok()) << "Merge of record failed: " << status.ToString();
 }
@@ -496,15 +506,11 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
         while (!done) {
             while (queue.pop(entry)) {
                 entries_batch.push_back(entry);
+                std::vector<uint8_t> buf;
+                entities::serialize(buf, entry->second);
+                const auto value = to_slice(buf);
+                wb.Put(categorylinks_cf_, entry->first, value);
                 if (entries_batch.size() >= kWriteBatchSize) {
-                    for (const auto &entry : entries_batch) {
-                        std::vector<uint8_t> buf;
-                        entities::serialize(buf, entry->second);
-                        rocksdb::Slice value{
-                            reinterpret_cast<const char *>(buf.data()),
-                            buf.size()};
-                        wb.Put(categorylinks_cf_, entry->first, value);
-                    }
                     rocksdb::WriteOptions write_options;
                     const auto status = db_->Write(write_options, &wb);
                     CHECK(status.ok())
@@ -516,13 +522,22 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
                 }
             }
         }
+        if (!entries_batch.empty()) {
+            rocksdb::WriteOptions write_options;
+            const auto status = db_->Write(write_options, &wb);
+            CHECK(status.ok())
+                << "Failed to write batch: " << status.ToString();
+            for (size_t i = 0; i < entries_batch.size(); ++i) {
+                delete entries_batch[i];
+            }
+        }
     }};
     std::atomic<uint64_t> counter{0};
     LOG(INFO) << "Pruning the dangling subcategories (subcategories that do "
                  "not have real _article_ (not file) pages underneath them)...";
     parallel_for_each(
         [this, &queue, &counter](std::string_view category_name,
-                                 entities::CategoryLinkRecord &record) {
+                                 entities::CategoryLinkRecord &&record) {
             const auto before_len = record.subcategories().size();
             prune_dangling_subcategories(record);
             if (record.subcategories().size() != before_len) {
@@ -535,7 +550,7 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
             }
             const auto counter_val = counter.fetch_add(1);
             LOG_IF(INFO, counter_val % 100'000 == 0)
-                << "Pruned dangling subcategories for " << counter
+                << "Pruned dangling subcategories for " << counter_val
                 << " categories so far";
         });
     counter = 0;
@@ -544,7 +559,7 @@ auto CategoryTreeIndexWriter::run_second_pass() -> void {
                  "under a category)...";
     parallel_for_each(
         [this, &counter, &queue](std::string_view category_name,
-                                 entities::CategoryLinkRecord &record) {
+                                 entities::CategoryLinkRecord &&record) {
             const auto weights =
                 build_weights(category_name, DEPTH_BEGIN, DEPTH_END);
             record.weights_mut().assign(weights.begin(), weights.end());
@@ -608,10 +623,7 @@ auto CategoryTreeIndexReader::for_each(
     entities::CategoryLinkRecord record{};
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string_view category_name{it->key().data(), it->key().size()};
-        entities::deserialize(
-            record, std::span<const uint8_t>{
-                        reinterpret_cast<const uint8_t *>(it->value().data()),
-                        it->value().size()});
+        entities::deserialize(record, to_byte_span(it->value()));
         const bool keep_going = consumer(category_name, record);
         if (!keep_going)
             break;
@@ -624,16 +636,9 @@ bool CategoryLinkRecordMergeOperator::Merge(
     rocksdb::Logger *) const {
     if (existing_value) {
         entities::CategoryLinkRecord existing_record;
-        entities::deserialize(
-            existing_record,
-            std::span<const uint8_t>{
-                reinterpret_cast<const uint8_t *>(existing_value->data()),
-                existing_value->size()});
+        entities::deserialize(existing_record, to_byte_span(*existing_value));
         entities::CategoryLinkRecord new_record;
-        entities::deserialize(
-            new_record,
-            std::span<const uint8_t>{
-                reinterpret_cast<const uint8_t *>(value.data()), value.size()});
+        entities::deserialize(new_record, to_byte_span(value));
         new_record += std::move(existing_record);
         std::stringstream sbuf;
         entities::serialize(sbuf, new_record);
