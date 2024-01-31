@@ -29,9 +29,12 @@ auto Session::pick_random_article_and_show_derivation(
     }
 }
 
-auto Session::autocomplete_category_name(std::string_view category_name)
+auto Session::autocomplete_category_name(std::string_view category_name,
+                                         size_t requested_count)
     -> std::vector<std::string> {
-    return index_->search_categories(category_name);
+    // clamp requested_count to [1, 100]
+    requested_count = std::max(1UL, std::min(requested_count, 100UL));
+    return index_->search_categories(category_name, requested_count);
 }
 
 auto Session::take(uint64_t n) -> std::vector<std::string> {

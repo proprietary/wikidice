@@ -15,7 +15,8 @@ namespace net_zelcon::wikidice {
 
 class Session {
   public:
-    auto autocomplete_category_name(std::string_view)
+    auto autocomplete_category_name(std::string_view,
+                                    size_t requested_count = 10)
         -> std::vector<std::string>;
     auto pick_random_article(std::string_view category_name,
                              uint8_t depth) -> std::pair<uint64_t, bool>;
