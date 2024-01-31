@@ -693,8 +693,8 @@ auto CategoryTreeIndexReader::pick_at_depth_and_show_derivation(
     const auto record = get(category_name);
     if (!record)
         return std::nullopt;
-    const auto picked =
-        absl::Uniform<std::uint64_t>(gen, 0UL, record->weight_at_depth(depth));
+    const auto weight = record->weight_at_depth(depth);
+    const auto picked = absl::Uniform<std::uint64_t>(gen, 0UL, weight);
     return resolve_index_with_derivation(category_name, picked, depth);
 }
 

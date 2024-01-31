@@ -69,16 +69,18 @@ class CategoryLinkRecord {
         }
         size_t l = 0;
         size_t r = len - 1;
-        while (l < r) {
-            const auto m = (l + r) / 2;
-            if (weights_[m].depth == depth) {
-                return weights_[m].weight;
-            } else if (weights_[m].depth < depth) {
+        while (l <= r) {
+            const auto m = l + ((r - l) / 2);
+            if (weights_[m].depth < depth) {
                 l = m + 1;
             } else if (weights_[m].depth > depth) {
                 r = m - 1;
+            } else {
+                return weights_[m].weight;
             }
         }
+        // errored:
+        // implicit out-of-bounds silently falls back to the last weight
         return weights_.back().weight;
     }
 
