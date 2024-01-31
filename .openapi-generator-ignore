@@ -1,0 +1,8 @@
+README.md
+docker-compose.yaml
+Dockerfile
+requirements.txt
+pyproject.toml
+setup.cfg
+.flake8
+.gitignore

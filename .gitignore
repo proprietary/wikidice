@@ -1,17 +1,3 @@
-/data
-enwiki-*.sql
-enwiki-*.sql.gz
-/mydb.db
-/db
-/_build
-/_build_release
-/build
-/.vscode
-.DS_Store
-/compile_commands.json
-
-/venv
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -150,3 +136,26 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Secrets
+.envrc
+
+# Configuration
+.vscode
+.DS_Store
+
+# CMake
+/build
+/_build
+/_build_release
+/build_release
+compile_commands.json
+
+# Test data
+enwiki-*.sql
+enwiki-*.sql.gz
+/data
+mydb.db
+
+# Generated files
+.openapi-generator

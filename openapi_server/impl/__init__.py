@@ -3,12 +3,11 @@ Edit this file instead of the generated ones to change the behavior of the API.
 
 Command to regenerate:
 
-    mkdir /tmp/openapi_generated
-    java -jar openapi-generator-cli-7.2.0.jar generate -g python-fastapi \
-            -i openapi.yaml \
-            -o /tmp/openapi_generated \
-            --additional-properties fastapiImplementationPackage=openapi_server.impl,sourceFolder=
-    mv /tmp/openapi_generated/openapi_server $(git rev-parse --show-toplevel)
+    java -jar openapi-generator-cli-7.2.0.jar \
+        generate -g python-fastapi \
+        -i openapi.yaml \
+        -o $(git rev-parse --show-toplevel) \
+        --additional-properties fastapiImplementationPackage=openapi_server.impl,sourceFolder=
 
 """
 
@@ -19,6 +18,9 @@ from fastapi import Response
 
 from openapi_server.apis.default_api_base import BaseDefaultApi
 
+from openapi_server.models.random_article_with_derivation import (
+    RandomArticleWithDerivation,
+)
 from openapi_server.models.error import Error
 
 import build.pywikidice as pywikidice
@@ -33,6 +35,7 @@ class DefaultApiImpl(BaseDefaultApi):
         self,
         prefix: str,
         language: str,
+        limit: int,
     ) -> List[str]:
         """Prefix search for categories"""
         if language != "en":
@@ -41,17 +44,77 @@ class DefaultApiImpl(BaseDefaultApi):
                 message="Only English is supported at this time",
             )
             return Response(status_code=400, content=error)
-        return PYWIKIDICE_SESSION.autocomplete_category_name(prefix)
+        limit = max(1, min(limit, 100))
+        prefix = prefix.replace(" ", "_")
+        result = PYWIKIDICE_SESSION.autocomplete_category_name(prefix, limit)
+        return [x.replace("_", " ") for x in result][:limit]
 
     def get_random_article(
         self,
         category: str,
+        depth: int,
         language: str,
     ) -> None:
         """Get a random article from Wikipedia under a category"""
-        page_id, ok = PYWIKIDICE_SESSION.pick_random_article(category)
+        if language != "en":
+            return Response(
+                content=Error(
+                    code=400,
+                    message="Only English is supported at this time",
+                )
+            )
+        if depth > 100:
+            return Response(
+                content=Error(
+                    code=400,
+                    message="Depth cannot be greater than 100",
+                ),
+                status_code=400,
+            )
+        page_id, ok = PYWIKIDICE_SESSION.pick_random_article(category, depth)
         if not ok:
             return Response(status_code=404)
         wikipedia_url = f"https://{language}.wikipedia.org/?curid={page_id}"
         # Return result with a redirect
         return Response(status_code=302, headers={"Location": wikipedia_url})
+
+    def get_random_article_with_derivation(
+        self,
+        category: str,
+        depth: int,
+        language: str,
+    ) -> RandomArticleWithDerivation:
+        """Get a random article from Wikipedia under a category, but also return
+        the category path that was traversed to get to the article."""
+        if language != "en":
+            return Response(
+                content=Error(
+                    code=400,
+                    message="Only English is supported at this time",
+                )
+            )
+        if depth > 100:
+            return Response(
+                content=Error(
+                    code=400,
+                    message="Depth cannot be greater than 100",
+                ),
+                status_code=400,
+            )
+        category = category.replace(' ', '_')
+        (
+            page_id,
+            ok,
+            derivation,
+        ) = PYWIKIDICE_SESSION.pick_random_article_and_show_derivation(
+            category, depth
+        )
+        if not ok:
+            return Response(status_code=404)
+        # remove underscores from names
+        for i in range(len(derivation)):
+            derivation[i] = derivation[i].replace("_", " ")
+        return RandomArticleWithDerivation(
+            derivation=derivation,
+            article=page_id,
+        )

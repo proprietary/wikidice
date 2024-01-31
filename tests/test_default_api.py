@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 
 from openapi_server.models.error import Error  # noqa: F401
+from openapi_server.models.random_article_with_derivation import RandomArticleWithDerivation  # noqa: F401
 
 
 def test_category_autocomplete(client: TestClient):
@@ -11,7 +12,7 @@ def test_category_autocomplete(client: TestClient):
 
     Autocompletion search for category names
     """
-    params = [("prefix", 'prefix_example'),     ("language", 'en')]
+    params = [("prefix", 'prefix_example'),     ("language", 'en'),     ("limit", 10)]
     headers = {
     }
     response = client.request(
@@ -28,14 +29,33 @@ def test_category_autocomplete(client: TestClient):
 def test_get_random_article(client: TestClient):
     """Test case for get_random_article
 
-    Get a random article
+    Pick a random article under a category
     """
-    params = [("language", 'en')]
+    params = [("depth", 5),     ("language", 'en')]
     headers = {
     }
     response = client.request(
         "GET",
         "/random/{category}".format(category='category_example'),
+        headers=headers,
+        params=params,
+    )
+
+    # uncomment below to assert the status code of the HTTP response
+    #assert response.status_code == 200
+
+
+def test_get_random_article_with_derivation(client: TestClient):
+    """Test case for get_random_article_with_derivation
+
+    Get a random article, but with details
+    """
+    params = [("depth", 5),     ("language", 'en')]
+    headers = {
+    }
+    response = client.request(
+        "GET",
+        "/random_with_derivation/{category}".format(category='category_example'),
         headers=headers,
         params=params,
     )
