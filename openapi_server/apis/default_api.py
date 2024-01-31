@@ -46,7 +46,7 @@ for _, name, _ in pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + "."):
 )
 async def category_autocomplete(
     prefix: str = Query(None, description="Prefix to search for", alias="prefix"),
-    language: str = Query('en', description="Wikipedia language name such as \&quot;en\&quot;, \&quot;de\&quot;, etc. For examples, see: https://en.wikipedia.org/wiki/List_of_Wikipedias ", alias="language"),
+    language: str = Query('en', description="Wikipedia language name such as en, de, etc. For examples, see: https://en.wikipedia.org/wiki/List_of_Wikipedias ", alias="language"),
     limit: int = Query(10, description="Maximum number of results to return ", alias="limit", ge=1, le=100),
 ) -> List[str]:
     """Prefix search for categories"""
@@ -68,7 +68,7 @@ async def category_autocomplete(
 async def get_random_article(
     category: str = Path(..., description="Category to search under (recursively, including subcategories)"),
     depth: int = Query(5, description="Maximum depth (recursive subcategories) to search for articles ", alias="depth", ge=0, le=100),
-    language: str = Query('en', description="Wikipedia language name such as \&quot;en\&quot;, \&quot;de\&quot;, etc. For examples, see: https://en.wikipedia.org/wiki/List_of_Wikipedias ", alias="language"),
+    language: str = Query('en', description="Wikipedia language name such as en, de, etc. For examples, see: https://en.wikipedia.org/wiki/List_of_Wikipedias ", alias="language"),
 ) -> None:
     """Get a random article from Wikipedia under a category"""
     return BaseDefaultApi.subclasses[0]().get_random_article(category, depth, language)
@@ -89,7 +89,7 @@ async def get_random_article(
 async def get_random_article_with_derivation(
     category: str = Path(..., description="Category to search under (recursively, including subcategories)"),
     depth: int = Query(5, description="Maximum depth (recursive subcategories) to search for articles ", alias="depth", ge=0, le=100),
-    language: str = Query('en', description="Wikipedia language name such as \&quot;en\&quot;, \&quot;de\&quot;, etc. For examples, see: https://en.wikipedia.org/wiki/List_of_Wikipedias ", alias="language"),
+    language: str = Query('en', description="Wikipedia language name such as en, de, etc. For examples, see: https://en.wikipedia.org/wiki/List_of_Wikipedias ", alias="language"),
 ) -> RandomArticleWithDerivation:
     """Get a random article from Wikipedia under a category, but also return the category path that was traversed to get to the article. """
     return BaseDefaultApi.subclasses[0]().get_random_article_with_derivation(category, depth, language)

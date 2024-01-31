@@ -40,7 +40,7 @@ paths:
         style: form
       - allowEmptyValue: false
         description: |
-          Wikipedia language name such as "en", "de", etc. For examples, see:
+          Wikipedia language name such as en, de, etc. For examples, see:
           https://en.wikipedia.org/wiki/List_of_Wikipedias
         explode: true
         in: query
@@ -108,7 +108,7 @@ paths:
         style: form
       - allowEmptyValue: false
         description: |
-          Wikipedia language name such as "en", "de", etc. For examples, see:
+          Wikipedia language name such as en, de, etc. For examples, see:
           https://en.wikipedia.org/wiki/List_of_Wikipedias
         explode: true
         in: query
@@ -116,6 +116,7 @@ paths:
         required: false
         schema:
           default: en
+          example: en
           type: string
         style: form
       responses:
@@ -159,7 +160,7 @@ paths:
         style: form
       - allowEmptyValue: false
         description: |
-          Wikipedia language name such as "en", "de", etc. For examples, see:
+          Wikipedia language name such as en, de, etc. For examples, see:
           https://en.wikipedia.org/wiki/List_of_Wikipedias
         explode: true
         in: query
@@ -167,6 +168,7 @@ paths:
         required: false
         schema:
           default: en
+          example: en
           type: string
         style: form
       - description: |
@@ -186,6 +188,17 @@ paths:
           content:
             application/json:
               schema:
+                example:
+                - Computer science
+                - Computer science-related professional associations
+                - Computer science articles by importance
+                - Computer science articles by quality
+                - Computer science articles needing attention
+                - Computer science articles needing expert attention
+                - Computer science articles without infoboxes
+                - Computer science award winners
+                - Computer science awards
+                - Computer science awards navigational boxes
                 items:
                   type: string
                 type: array
@@ -223,8 +236,10 @@ components:
       example:
         derivation:
         - Physics
-        - Concepts in physics
-        article: 1294378
+        - Subfields of physics
+        - Computational physics
+        - Lattice models
+        article: 24535618
       properties:
         article:
           description: Page ID
