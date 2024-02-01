@@ -1,0 +1,29 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "codegen": "openapi-typescript --input ../openapi.yaml --output ./api/v1.d.ts"
+  },
+  "dependencies": {
+    "downshift": "^8.3.1",
+    "next": "14.1.0",
+    "openapi-fetch": "^0.8.2",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.1.0",
+    "openapi-typescript": "^6.7.4",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "pnpm@8.15.1+sha256.245fe901f8e7fa8782d7f17d32b6a83995e2ae03984cb5b62b8949bfdc27c7b5"
+}
