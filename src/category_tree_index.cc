@@ -341,42 +341,16 @@ auto CategoryTreeIndex::lookup_subcats(std::string_view category_name)
 }
 
 auto CategoryTreeIndex::at_index(std::string_view category_name,
-                                 std::uint64_t index,
-                                 uint8_t depth) -> entities::PageId {
-    auto record = get(category_name);
-    if (!record) {
-        LOG(WARNING) << "category_name: " << category_name
-                     << " not found in `categorylinks` column family";
-        return 0;
-    }
-    const auto &pages = record->pages();
-    if (index < pages.size()) {
-        return pages[index];
-    }
-    index -= pages.size();
-    for (const auto &subcat : map_categories(record->subcategories())) {
-        const auto cat_details = get(subcat);
-        if (!cat_details) {
-            LOG(WARNING) << "category_name: " << subcat
-                         << " not found in `categorylinks` column family";
-            continue;
-        }
-        auto weight_at_depth = cat_details->weight_at_depth(depth);
-        if (weight_at_depth == 0)
-            weight_at_depth = compute_weight(category_name, depth);
-        if (index < weight_at_depth) {
-            return at_index(subcat, index, depth);
-        }
-        index -= weight_at_depth;
-    }
-    LOG(WARNING) << "index: " << index
-                 << " out of range for category_name: " << category_name;
-    return 0;
+                                 std::uint64_t index) -> entities::PageId {
+    entities::PageId page_id;
+    std::tie(page_id, std::ignore) =
+        resolve_index_with_derivation(category_name, index);
+    return page_id;
 }
 
 auto CategoryTreeIndex::resolve_index_with_derivation(
-    std::string_view category_name, std::uint64_t index,
-    uint8_t depth) -> std::tuple<entities::PageId, std::vector<std::string>> {
+    std::string_view category_name, std::uint64_t index)
+    -> std::tuple<entities::PageId, std::vector<std::string>> {
     std::vector<std::string> derivation;
     std::stack<std::string> stack;
     stack.emplace(category_name);
@@ -401,14 +375,11 @@ auto CategoryTreeIndex::resolve_index_with_derivation(
                              << " not found in `categorylinks` column family";
                 continue;
             }
-            auto weight_at_depth = cat_details->weight_at_depth(depth);
-            if (weight_at_depth == 0)
-                weight_at_depth = compute_weight(category_name, depth);
-            if (index < weight_at_depth) {
+            if (index < cat_details->pages().size()) {
                 stack.emplace(subcat);
                 break;
             }
-            index -= weight_at_depth;
+            index -= cat_details->pages().size();
         }
     }
     LOG(WARNING) << "index: " << index
@@ -684,7 +655,7 @@ auto CategoryTreeIndexReader::pick_at_depth(std::string_view category_name,
         return std::nullopt;
     const auto picked =
         absl::Uniform<std::uint64_t>(gen, 0UL, record->weight_at_depth(depth));
-    return at_index(category_name, picked, depth);
+    return at_index(category_name, picked);
 }
 
 auto CategoryTreeIndexReader::pick_at_depth_and_show_derivation(
@@ -695,7 +666,7 @@ auto CategoryTreeIndexReader::pick_at_depth_and_show_derivation(
         return std::nullopt;
     const auto weight = record->weight_at_depth(depth);
     const auto picked = absl::Uniform<std::uint64_t>(gen, 0UL, weight);
-    return resolve_index_with_derivation(category_name, picked, depth);
+    return resolve_index_with_derivation(category_name, picked);
 }
 
 auto CategoryTreeIndexWriter::set_weight(std::string_view category_name,
