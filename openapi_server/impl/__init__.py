@@ -101,14 +101,12 @@ class DefaultApiImpl(BaseDefaultApi):
                 ),
                 status_code=400,
             )
-        category = category.replace(' ', '_')
+        category = category.replace(" ", "_")
         (
             page_id,
             ok,
             derivation,
-        ) = PYWIKIDICE_SESSION.pick_random_article_and_show_derivation(
-            category, depth
-        )
+        ) = PYWIKIDICE_SESSION.pick_random_article_and_show_derivation(category, depth)
         if not ok:
             return Response(status_code=404)
         # remove underscores from names

@@ -23,4 +23,5 @@ class RandomArticleWithDerivation(BaseModel):
     article: Optional[int] = Field(alias="article", default=None)
     derivation: Optional[List[str]] = Field(alias="derivation", default=None)
 
+
 RandomArticleWithDerivation.update_forward_refs()
