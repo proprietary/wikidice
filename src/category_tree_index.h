@@ -113,11 +113,11 @@ class CategoryTreeIndex {
     auto
     lookup_subcats(std::string_view category_name) -> std::vector<std::string>;
 
-    auto at_index(std::string_view category_name,
-                  std::uint64_t index) -> std::uint64_t;
+    auto at_index(std::string_view category_name, uint64_t index,
+                  const uint8_t depth) -> std::uint64_t;
 
     auto resolve_index_with_derivation(std::string_view category_name,
-                                       uint64_t index)
+                                       uint64_t index, const uint8_t depth)
         -> std::tuple<entities::PageId, std::vector<std::string>>;
 
     virtual auto category_name_of(entities::CategoryId category_id)
