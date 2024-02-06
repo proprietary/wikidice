@@ -91,6 +91,7 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
                                                     item,
                                                     style: {
                                                         fontWeight: selectedItem === item ? 'bold' : 'normal',
+                                                        textDecoration: highlightedIndex === index ? 'underline' : 'none',
                                                     },
                                                 })}
                                             >
