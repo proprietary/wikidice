@@ -5,15 +5,16 @@ import Downshift from 'downshift';
 import { search } from '../api';
 
 type AutocompleteProps = {
+    query: string;
     placeholder: string;
     buttonText: string;
     onSearch?: (query: string) => Promise<Array<string>>;
+    handleQueryChange: (query: string) => void;
     onSubmit: (query: string) => Promise<void>;
 };
 
 type AutocompleteState = {
-    query: string;
-    items: Array<string>;
+    searchResults: Array<string>;
 };
 
 export class Autocomplete extends React.Component<AutocompleteProps> {
@@ -22,16 +23,19 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
     constructor(props: AutocompleteProps) {
         super(props);
         this.state = {
-            query: '',
-            items: [],
+            searchResults: [],
         };
     }
 
     componentDidMount() {
         this.state = {
-            query: '',
-            items: [],
+            searchResults: [],
         };
+    }
+
+    handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const query = e.target.value;
+        this.props.handleQueryChange(query);
     }
 
     render() {
@@ -39,12 +43,14 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
             <div>
                 <Downshift
                     onStateChange={({ inputValue }) => {
-                        if (inputValue != null)
-                            (this.props.onSearch || search)(inputValue).then((items) => {
-                                this.setState({ items });
+                        if (inputValue != null) {
+                            (this.props.onSearch || search)(inputValue).then((searchResults) => {
+                                this.setState({ searchResults });
                             });
+                        }
                     }}
-                    onChange={selection => this.setState({ query: selection || '' })}
+                    inputValue={this.props.query}
+                    onChange={selection => { this.props.handleQueryChange(selection); }}
                     itemToString={(item) => (item == null ? '' : item)}
                 >
                     {({
@@ -61,18 +67,18 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
                             <input
                                 {...getInputProps({
                                     placeholder: "Physics",
-                                    value: this.state.query,
-                                    onChange: (e) => { this.setState({ query: (e.target as HTMLInputElement).value }); },
+                                    onChange: this.handleChange,
+                                    value: this.props.query,
                                 })}
                             />
-                            <button onClick={() => this.props.onSubmit(this.state.query)}>{this.props.buttonText}</button>
+                            <button onClick={() => this.props.onSubmit(this.props.query)}>{this.props.buttonText}</button>
                             <ul {...getMenuProps()}>
                                 {isOpen
-                                    ? this.state.items
+                                    ? this.state.searchResults
                                         .map((item, index) => (
                                             <li
                                                 {...getItemProps({
-                                                    key: item,
+                                                    key: index,
                                                     index,
                                                     item,
                                                     style: {

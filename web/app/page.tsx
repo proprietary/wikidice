@@ -8,13 +8,13 @@ import { lookup } from '../api';
 import React from 'react';
 
 export default function Home() {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState<string>("");
   const [wikipediaUrl, setWikipediaUrl] = useState("");
   const [derivation, setDerivation] = useState<Array<string>>([]);
   const handleSubmit = async (query: string) => {
     setQuery(query);
     console.log(query);
-    const result = await lookup(query);
+    const result = await lookup(query, 20);
     if (result) {
       const [pageId, derivation] = result;
       setWikipediaUrl(`https://en.wikipedia.org/?curid=${pageId}`);
@@ -24,7 +24,7 @@ export default function Home() {
   return (
     <main>
       <div>
-        <Autocomplete placeholder="Physics" buttonText="Submit" onSubmit={handleSubmit}  />
+        <Autocomplete query={query} handleQueryChange={setQuery} placeholder="Physics" buttonText="Submit" onSubmit={handleSubmit}  />
       </div>
       <div>
         {wikipediaUrl.length > 0 && (
@@ -36,7 +36,7 @@ export default function Home() {
                   <React.Fragment key={i}>
                     <span>
                       <span onClick={() => { setQuery(cat); handleSubmit(cat); }} style={{cursor: 'pointer', color: 'blue', marginRight: '0.5rem'}}>{cat}</span>
-                      <a href={`https://en.wikiepdia.org/wiki/Category:${cat.replace(' ', '_')}`}>
+                      <a href={`https://en.wikipedia.org/wiki/Category:${cat.replace(' ', '_')}`} target="_blank">
                         <svg xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth={8} fill="none" width="12" height="12" viewBox="0 0 100 100">
                           <path d="m43,35H5v60h60V57M45,5v10l10,10-30,30 20,20 30-30 10,10h10V5z" />
                         </svg>

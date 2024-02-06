@@ -34,14 +34,14 @@ export async function search(query: string): Promise<Array<string>> {
     return data;
 }
 
-export async function lookup(categoryName: string): Promise<[number, Array<string>] | null> {
+export async function lookup(categoryName: string, depth: number = 5): Promise<[number, Array<string>] | null> {
     const { data, error, response } = await GET('/random_with_derivation/{category}', {
         params: {
             path: {
                 category: categoryName,
             },
             query: {
-                depth: 5,
+                depth,
                 language: 'en',
             },
         },
