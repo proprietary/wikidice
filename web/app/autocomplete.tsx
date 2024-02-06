@@ -3,11 +3,11 @@
 import React from 'react';
 import Downshift from 'downshift';
 import { search } from '../api';
+import styles from './page.module.css';
 
 type AutocompleteProps = {
     query: string;
     placeholder: string;
-    buttonText: string;
     onSearch?: (query: string) => Promise<Array<string>>;
     handleQueryChange: (query: string) => void;
     onSubmit: (query: string) => Promise<void>;
@@ -38,9 +38,14 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
         this.props.handleQueryChange(query);
     }
 
+    handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        this.props.onSubmit(this.props.query);
+    }
+
     render() {
         return (
-            <div>
+            <form onSubmit={this.handleSubmit}>
                 <Downshift
                     onStateChange={({ inputValue }) => {
                         if (inputValue != null) {
@@ -50,7 +55,10 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
                         }
                     }}
                     inputValue={this.props.query}
-                    onChange={selection => { this.props.handleQueryChange(selection); }}
+                    onChange={selection => {
+                        this.props.handleQueryChange(selection);
+                        this.props.onSubmit(selection);
+                    }}
                     itemToString={(item) => (item == null ? '' : item)}
                 >
                     {({
@@ -63,16 +71,16 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
                         selectedItem,
                     }) => (
                         <div>
-                            <label {...getLabelProps()}>Search</label>
                             <input
                                 {...getInputProps({
                                     placeholder: "Physics",
                                     onChange: this.handleChange,
                                     value: this.props.query,
+                                    className: styles.inputBox,
                                 })}
                             />
-                            <button onClick={() => this.props.onSubmit(this.props.query)}>{this.props.buttonText}</button>
-                            <ul {...getMenuProps()}>
+                            <button type="submit" className={styles.searchButton}>🎲</button>
+                            <ul {...getMenuProps()} style={{ listStyle: 'none' }}>
                                 {isOpen
                                     ? this.state.searchResults
                                         .map((item, index) => (
@@ -96,7 +104,7 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
                         </div>
                     )}
                 </Downshift>
-            </div>
+            </form>
         );
     }
 }

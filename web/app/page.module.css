@@ -7,6 +7,38 @@
   min-height: 100vh;
 }
 
+.searchBox {
+  padding: 2em;
+}
+
+.inputBox {
+  font-size: xx-large;
+}
+
+button.searchButton {
+  font-size: xx-large;
+  background: none;
+  border: none;
+  padding: 0 1rem 0 1rem;
+}
+
+button.searchButton:hover {
+  animation: bounce 0.5s;
+  cursor: pointer;
+}
+
+@keyframes bounce {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
 .description {
   display: inherit;
   justify-content: inherit;
@@ -217,14 +249,5 @@
 
   .logo {
     filter: invert(1) drop-shadow(0 0 0.3rem #ffffff70);
-  }
-}
-
-@keyframes rotate {
-  from {
-    transform: rotate(360deg);
-  }
-  to {
-    transform: rotate(0deg);
   }
 }

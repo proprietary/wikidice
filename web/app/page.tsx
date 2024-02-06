@@ -1,11 +1,10 @@
 'use client';
 
-import Image from "next/image";
-import styles from "./page.module.css";
 import { Autocomplete } from "./autocomplete";
 import { useState } from "react";
 import { lookup } from '../api';
 import React from 'react';
+import styles from './page.module.css';
 
 export default function Home() {
   const [query, setQuery] = useState<string>("");
@@ -22,15 +21,14 @@ export default function Home() {
     }
   };
   return (
-    <main>
-      <div>
-        <Autocomplete query={query} handleQueryChange={setQuery} placeholder="Physics" buttonText="Submit" onSubmit={handleSubmit}  />
+    <main className="main">
+      <div className={styles.searchBox}>
+        <Autocomplete query={query} handleQueryChange={setQuery} placeholder="Physics" onSubmit={handleSubmit}  />
       </div>
       <div>
         {wikipediaUrl.length > 0 && (
           <div>
             <div>
-              <p>Found via:</p>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 {derivation.map((cat, i, arr) => (
                   <React.Fragment key={i}>
