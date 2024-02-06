@@ -34,8 +34,8 @@ export default function Home() {
                 {derivation.map((cat, i, arr) => (
                   <React.Fragment key={i}>
                     <span>
-                      <span onClick={() => { setQuery(cat); handleSubmit(cat); }} style={{cursor: 'pointer', color: 'blue', marginRight: '0.5rem'}}>{cat}</span>
-                      <a className={styles.anchor} href={`https://en.wikipedia.org/wiki/Category:${cat.replace(' ', '_')}`} target="_blank">
+                      <span onClick={() => { setQuery(cat); handleSubmit(cat); }} style={{cursor: 'pointer', marginRight: '0.5rem'}}>{cat}</span>
+                      <a href={`https://en.wikipedia.org/wiki/Category:${cat.replace(' ', '_')}`} target="_blank">
                         <svg xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth={8} fill="none" width="12" height="12" viewBox="0 0 100 100">
                           <path d="m43,35H5v60h60V57M45,5v10l10,10-30,30 20,20 30-30 10,10h10V5z" />
                         </svg>
