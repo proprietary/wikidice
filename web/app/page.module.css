@@ -17,6 +17,7 @@
 
 .inputBox {
   font-size: large;
+  min-width: 50vw;
 }
 
 .footer {
