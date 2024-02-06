@@ -1,7 +1,8 @@
 import type { paths } from './v1';
 import createClient from 'openapi-fetch';
+import baseUrl from './config';
 
-const { GET } = createClient<paths>({ baseUrl: "http://localhost:8080" });
+const { GET } = createClient<paths>({ baseUrl });
 
 export async function search(query: string): Promise<Array<string>> {
     const { data, error, response } = await GET('/autocomplete', {

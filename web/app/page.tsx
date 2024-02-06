@@ -5,6 +5,7 @@ import { useState } from "react";
 import { lookup } from '../api';
 import React from 'react';
 import styles from './page.module.css';
+import apiUrl from '../api/config';
 
 export default function Home() {
   const [query, setQuery] = useState<string>("");
@@ -55,6 +56,11 @@ export default function Home() {
           </div>
         )}
       </div>
+      <footer className={styles.footer}>
+        <p>&copy;2024 Zelly Snyder</p>
+        <p><a href={`${apiUrl}/docs`} target="_blank">API</a></p>
+        <p>Fork me on <a target="_blank" href="https://github.com/proprietary/wikidice">Github</a></p>
+      </footer>
     </main>
   );
 }
