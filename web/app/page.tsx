@@ -30,7 +30,7 @@ export default function Home() {
         {wikipediaUrl.length > 0 && (
           <div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', overflowX: 'scroll' }}>
                 {derivation.map((cat, i, arr) => (
                   <React.Fragment key={i}>
                     <span>
