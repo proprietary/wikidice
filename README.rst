@@ -46,10 +46,11 @@ Architecture
 ============
 
 This project consists of a core C++ library, which interfaces with an
-embedded RocksDB database. `wikidice_builder` parses Wikipedia's SQL
+embedded RocksDB database. ``wikidice_builder`` parses Wikipedia's SQL
 dumps (provided free by Wikimedia) and populates the RocksDB
 database. Python bindings are used to create a Swagger API server
-which serves the web frontend, a simple website built with Next.js.
+which serves the web frontend (in ``/web/``), a simple website built
+with Next.js.
 
 Overview of design::
 
