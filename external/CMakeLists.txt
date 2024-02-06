@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(abseil-cpp)
 add_subdirectory(fmt-10.1.0)
 
 # Boost
-set(BOOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0")
+set(Boost_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0")
 find_package(Boost REQUIRED)
 add_library(boost_headers INTERFACE)
 target_include_directories(boost_headers INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/boost_1_84_0)
