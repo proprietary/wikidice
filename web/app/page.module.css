@@ -52,3 +52,6 @@ button.searchButton:hover {
   }
 }
 
+.anchor {
+  color: rgb(var(--foreground-rgb));
+}
