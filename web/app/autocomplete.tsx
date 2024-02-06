@@ -28,9 +28,9 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
     }
 
     componentDidMount() {
-        this.state = {
+        this.setState({
             searchResults: [],
-        };
+        });
     }
 
     handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,8 +85,8 @@ export class Autocomplete extends React.Component<AutocompleteProps> {
                                     ? this.state.searchResults
                                         .map((item, index) => (
                                             <li
+                                                key={index}
                                                 {...getItemProps({
-                                                    key: index,
                                                     index,
                                                     item,
                                                     style: {
